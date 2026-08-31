@@ -1,0 +1,79 @@
+# ---------------------------------------------------------------------------
+# PLAYBOOK MEMORY  (seed state)
+# Past interventions with their MEASURED outcome. This is the asset that makes
+# recommendations specific to this company rather than generic advice, and the
+# one a warehouse vendor cannot commoditise. feedback.py appends to it and
+# re-estimates effect sizes as outcomes land.
+# ---------------------------------------------------------------------------
+version: "1.0.0"
+
+playbooks:
+  - id: PB-2024-PUNE-SLA
+    title: "Pune SLA recovery"
+    pattern:
+      kpi: net_revenue
+      driver_type: service_failure
+      mechanism_path: [warehouse_sla, delivery_delay, customer_trust, reorder_behaviour]
+      segment_shape: "few_large_accounts"
+    applied_on: "2024-09-02"
+    context: "WH-2 missed dispatch SLA for 3 weeks; 5 enterprise accounts cut reorder frequency."
+    actions:
+      - lever: service_credit
+        detail: "2% service credit on affected invoices, issued within 10 days"
+      - lever: named_rep_outreach
+        detail: "Named-rep call within 10 days with a written recovery commitment"
+      - lever: warehouse_capacity
+        detail: "Added one dispatch shift for 6 weeks"
+    outcome:
+      measured: true
+      at_risk_volume_recovered_pct: 0.71
+      weeks_to_effect: 6
+      cost_inr: 2200000
+      revenue_recovered_inr: 18400000
+      measurement_method: "diff-in-diff vs unaffected accounts on other warehouses"
+      confidence: high
+    n_observations: 1
+
+  - id: PB-2025-DISCOUNT-CREEP
+    title: "Discount tier creep correction"
+    pattern:
+      kpi: asp
+      driver_type: mix_shift
+      mechanism_path: [tier_mix, price_level]
+      segment_shape: "broad_mix"
+    applied_on: "2025-03-11"
+    context: "Discount-tier share rose 6pp over a quarter; realised ASP fell without volume gain."
+    actions:
+      - lever: price_correction
+        detail: "Withdrew discount tier for Mid-Market; grandfathered top 10 accounts for one quarter"
+    outcome:
+      measured: true
+      asp_recovered_pct: 0.63
+      weeks_to_effect: 9
+      cost_inr: 0
+      volume_lost_pct: 0.018
+      measurement_method: "synthetic control on unaffected regions"
+      confidence: medium
+    n_observations: 2
+
+  - id: PB-2025-COMPETITOR-PROMO
+    title: "Competitor promotion counter-response"
+    pattern:
+      kpi: order_volume
+      driver_type: external_market
+      mechanism_path: [competitor_promo, order_volume]
+      segment_shape: "channel_concentrated"
+    applied_on: "2025-07-21"
+    context: "Regional competitor ran a 3-week trade promotion in ModernTrade."
+    actions:
+      - lever: promo_response
+        detail: "Tactical counter-promotion in ModernTrade only, capped at 3 weeks"
+    outcome:
+      measured: true
+      volume_defended_pct: 0.44
+      weeks_to_effect: 3
+      cost_inr: 5100000
+      measurement_method: "pre/post vs unaffected channels - WEAK design, see caveat"
+      confidence: low
+      caveat: "No clean control; effect may be seasonal recovery. Treated as L1 evidence."
+    n_observations: 1

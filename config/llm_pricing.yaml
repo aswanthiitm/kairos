@@ -1,0 +1,13 @@
+# Public list prices, USD per million tokens. Used for cost telemetry only.
+# Verify against current pricing before quoting externally.
+models:
+  claude-haiku-4-5-20251001:  {input: 1.00,  output: 5.00,  label: "Haiku 4.5"}
+  claude-sonnet-5:            {input: 3.00,  output: 15.00, label: "Sonnet 5"}
+  claude-opus-5:              {input: 15.00, output: 75.00, label: "Opus 5"}
+usd_to_inr: 88.0
+# Routing policy: cheapest model that clears the quality bar for each job.
+routing:
+  intent_parse:      claude-haiku-4-5-20251001
+  hypothesis_expand: claude-haiku-4-5-20251001
+  narrative:         claude-haiku-4-5-20251001
+  narrative_exec:    claude-haiku-4-5-20251001

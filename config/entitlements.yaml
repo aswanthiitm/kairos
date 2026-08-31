@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------------------
+# PERSONAS, ENTITLEMENTS AND NARRATIVE POLICY
+# Row-, column- and domain-level controls. Enforcement happens in security.py
+# BEFORE retrieval and BEFORE any prompt is assembled - never as a post-filter
+# on generated text, which would leak through the model.
+# ---------------------------------------------------------------------------
+version: "1.0.0"
+
+personas:
+  cfo:
+    label: "Chief Financial Officer"
+    display: "CFO"
+    row_filter: {}                            # all regions
+    deny_columns: []
+    deny_domains: [crm_verbatim]              # sees themes, never raw transcripts
+    pii_policy: redact
+    narrative:
+      depth: executive
+      focus: [plan_variance, rupee_impact, margin, decision_required]
+      max_words: 150
+      wants_method_detail: false
+      channel: "Monday exec brief + email"
+  rsm_north:
+    label: "Regional Sales Manager - North"
+    display: "RSM North"
+    row_filter: {region: [North]}             # row-level security
+    deny_columns: [gross_margin_pct]
+    deny_domains: []
+    pii_policy: mask_contact                  # can see account + rep, not customer phone/email
+    narrative:
+      depth: operational
+      focus: [named_accounts, next_action, owner, timeline]
+      max_words: 180
+      wants_method_detail: false
+      channel: "CRM task + WhatsApp digest"
+  supply_chain_lead:
+    label: "Supply Chain Lead"
+    display: "Supply Chain"
+    row_filter: {}
+    deny_columns: [net_revenue, asp, gross_margin_pct]   # column-level: no commercials
+    deny_domains: [crm_verbatim]
+    pii_policy: redact
+    narrative:
+      depth: operational
+      focus: [warehouse, sla, root_cause, capacity_action]
+      max_words: 160
+      wants_method_detail: false
+      channel: "Ops standup board"
+  data_analyst:
+    label: "Data & Analytics"
+    display: "Analyst"
+    row_filter: {}
+    deny_columns: []
+    deny_domains: []
+    pii_policy: mask_contact
+    narrative:
+      depth: technical
+      focus: [method, contribution, confidence, lineage, alternatives]
+      max_words: 220
+      wants_method_detail: true
+      channel: "Analyst workbench"
+
+# What each sensitivity class means when a persona is denied it
+column_sensitivity:
+  financial: [net_revenue, asp, gross_margin_pct, discount_pct]
+  internal:  [order_volume, otd_pct, reorder_rate_28d]
+
+pii_patterns:
+  contact_phone: '(\+91[\-\s]?)?[6-9]\d{9}'
+  contact_email: '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'

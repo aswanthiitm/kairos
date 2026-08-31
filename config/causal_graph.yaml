@@ -1,0 +1,47 @@
+# ---------------------------------------------------------------------------
+# DOMAIN CAUSAL GRAPH
+# A hand-curated DAG maintained by analysts. Its job is NOT to compute effects -
+# it is to BLOCK nonsense. A hypothesis whose mechanism has no admissible path
+# to the target KPI is rejected before it is ever scored or narrated.
+# Curation is a human task; see feedback.py for how analysts amend it.
+# ---------------------------------------------------------------------------
+version: "1.1.0"
+curated_by: "Analytics CoE + Supply Chain planning"
+last_reviewed: "2026-08-14"
+
+nodes:
+  warehouse_sla:      {label: "Warehouse dispatch SLA",        observable: otd_pct,          type: operational}
+  delivery_delay:     {label: "Delivery delay experienced",    observable: dispatch.actual_days, type: operational}
+  customer_trust:     {label: "Account service confidence",    observable: null,             type: latent}
+  reorder_behaviour:  {label: "Reorder frequency",             observable: reorder_rate_28d, type: behavioural}
+  order_volume:       {label: "Order volume",                  observable: order_volume,     type: commercial}
+  price_level:        {label: "Effective price / discount",    observable: asp,              type: commercial}
+  tier_mix:           {label: "Product tier mix",              observable: null,             type: commercial}
+  competitor_promo:   {label: "Competitor promotion",          observable: market.event,     type: external}
+  seasonality:        {label: "Seasonal demand pattern",       observable: null,             type: external}
+  weather:            {label: "Weather",                       observable: null,             type: external}
+  net_revenue:        {label: "Net revenue",                   observable: net_revenue,      type: commercial}
+  data_pipeline:      {label: "Data pipeline state",           observable: freshness,        type: instrumentation}
+
+# directed edges: cause -> effect, with the mechanism an analyst can defend
+edges:
+  - {from: warehouse_sla,     to: delivery_delay,    sign: negative, lag_days: 0,  mechanism: "missed dispatch windows become late deliveries"}
+  - {from: delivery_delay,    to: customer_trust,    sign: negative, lag_days: 3,  mechanism: "repeated lateness erodes service confidence"}
+  - {from: customer_trust,    to: reorder_behaviour, sign: positive, lag_days: 7,  mechanism: "low confidence -> buyers dual-source or delay reorders"}
+  - {from: reorder_behaviour, to: order_volume,      sign: positive, lag_days: 0,  mechanism: "fewer reorders is directly fewer units"}
+  - {from: order_volume,      to: net_revenue,       sign: positive, lag_days: 0,  mechanism: "identity: revenue = volume x price"}
+  - {from: price_level,       to: net_revenue,       sign: positive, lag_days: 0,  mechanism: "identity: revenue = volume x price"}
+  - {from: price_level,       to: order_volume,      sign: negative, lag_days: 2,  mechanism: "price elasticity"}
+  - {from: tier_mix,          to: price_level,       sign: positive, lag_days: 0,  mechanism: "mix shift to discount tier lowers realised ASP"}
+  - {from: competitor_promo,  to: order_volume,      sign: negative, lag_days: 1,  mechanism: "share switching during competitor promotion"}
+  - {from: seasonality,       to: order_volume,      sign: positive, lag_days: 0,  mechanism: "calendar demand pattern"}
+  - {from: weather,           to: delivery_delay,    sign: positive, lag_days: 0,  mechanism: "transport disruption"}
+  - {from: data_pipeline,     to: net_revenue,       sign: positive, lag_days: 0,  mechanism: "INSTRUMENTATION ONLY - a stale feed changes the measurement, not the business"}
+
+# Explicit blocks: pairs an LLM might plausibly connect but a domain expert rejects.
+# These exist because a fluent model will happily invent them.
+blocked:
+  - {from: weather,          to: reorder_behaviour, reason: "no admissible mechanism at this lag in a B2B contract-driven category"}
+  - {from: competitor_promo, to: otd_pct,           reason: "competitor activity cannot affect our own dispatch performance"}
+  - {from: tier_mix,         to: warehouse_sla,     reason: "product mix does not drive dispatch reliability in this network"}
+  - {from: seasonality,      to: data_pipeline,     reason: "instrumentation state is not seasonal"}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Why Layer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%94%8E</text></svg>">
+<link rel="stylesheet" href="/static/style.css">
+</head><body>
+<header class="top">
+  <div class="brand">
+    <div class="mark"></div>
+    <div><h1>The Why Layer</h1><p>KPI intelligence-to-action engine &middot; prototype</p></div>
+  </div>
+  <div class="controls">
+    <label>Scenario<select id="scenario"></select></label>
+    <label>Persona<select id="persona"></select></label>
+    <label>Narrator<select id="narrator">
+      <option value="auto">auto (API key if present)</option>
+      <option value="offline">offline — deterministic</option>
+      <option value="simulate">simulated LLM — guard passes</option>
+      <option value="simulate_bad">simulated LLM — hallucinated figures</option>
+    </select></label>
+    <button id="runbtn">Analyse</button>
+  </div>
+</header>
+
+<div id="freshness" class="freshbar"></div>
+
+<main id="main" class="wrap">
+  <div class="loading">Select a scenario and press Analyse.</div>
+</main>
+
+<footer class="foot">
+  <span>Synthetic estate &middot; 4 sources &middot; 3 grains &middot; 4 refresh cadences</span>
+  <span id="footmeta"></span>
+</footer>
+<script src="/static/app.js"></script>
+</body></html>

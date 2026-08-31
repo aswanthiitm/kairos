@@ -1,0 +1,166 @@
+# ---------------------------------------------------------------------------
+# KPI SEMANTIC CONTRACT
+# The single governed definition of every metric the engine may reason about.
+# Nothing in the engine computes a KPI that is not declared here.
+# ---------------------------------------------------------------------------
+version: "1.3.0"
+owner: "Data & Analytics CoE"
+fiscal_calendar: "apr_mar"          # Indian FY: Apr 1 - Mar 31
+default_currency: "INR"
+timezone: "Asia/Kolkata"
+
+sources:
+  orders:
+    system: "Warehouse (DuckDB table: orders)"
+    kind: structured
+    grain: "order_line"
+    refresh_cadence_minutes: 60
+    freshness_sla_minutes: 180
+    history_start: "2026-01-01"
+    lineage: "ERP.sales_order_line -> stg_orders -> fct_orders"
+    contains_pii: false
+  dispatch:
+    system: "Ops / TMS export (CSV: dispatch_log.csv)"
+    kind: structured
+    grain: "shipment"
+    refresh_cadence_minutes: 1440    # daily T+1
+    freshness_sla_minutes: 2880
+    history_start: "2026-01-01"
+    lineage: "TMS.shipment -> sftp_drop -> stg_dispatch"
+    contains_pii: false
+  crm:
+    system: "CRM + service desk + call analytics (JSONL: interactions.jsonl)"
+    kind: unstructured
+    grain: "interaction_event"
+    refresh_cadence_minutes: 15
+    freshness_sla_minutes: 120
+    history_start: "2026-01-01"
+    lineage: "Salesforce/Freshdesk/CallRail -> text_lake"
+    contains_pii: true
+    pii_fields: ["contact_name", "contact_phone", "contact_email", "text"]
+  market:
+    system: "Market & promo calendar (CSV: market_events.csv)"
+    kind: external
+    grain: "event"
+    refresh_cadence_minutes: 10080   # weekly
+    freshness_sla_minutes: 43200
+    history_start: "2026-01-01"
+    lineage: "Nielsen extract + internal promo calendar"
+    contains_pii: false
+
+dimensions:
+  region:     {type: categorical, values: [North, South, East, West], hierarchy: [region, city]}
+  segment:    {type: categorical, values: [Enterprise, Mid-Market, SMB]}
+  channel:    {type: categorical, values: [Direct, Distributor, ModernTrade, Ecommerce]}
+  category:   {type: categorical, values: [Dairy, Staples, Snacks, Beverages, ColdPressedOils]}
+  warehouse:  {type: categorical, values: [WH-1, WH-2, WH-3, WH-4]}
+  tier:       {type: categorical, values: [Premium, Standard, Discount]}
+  account:    {type: entity, sensitivity: internal}
+
+kpis:
+  net_revenue:
+    label: "Net Revenue"
+    unit: INR
+    format: "inr_cr"
+    grain: daily
+    source: orders
+    sql: "SELECT order_date AS d, SUM(net_revenue) AS v FROM orders {where} GROUP BY 1"
+    additive: true
+    decomposition: "net_revenue = order_volume * asp"     # exact identity -> mix/rate algebra
+    drivers: [order_volume, asp, tier_mix, channel_mix]
+    materiality:
+      min_abs_inr: 2500000        # Rs 25 L - below this we do not wake anyone up
+      min_pct_of_plan: 0.015      # 1.5% of period plan
+      min_persistence_days: 3
+    thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
+    plan_column: plan_net_revenue
+    access: {row_filter: region, column_sensitivity: financial}
+
+  order_volume:
+    label: "Order Volume (units)"
+    unit: units
+    grain: daily
+    source: orders
+    sql: "SELECT order_date AS d, SUM(units) AS v FROM orders {where} GROUP BY 1"
+    additive: true
+    drivers: [reorder_rate_28d, active_accounts, market_event]
+    materiality: {min_abs_inr: 0, min_pct_of_plan: 0.02, min_persistence_days: 3}
+    thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
+    access: {row_filter: region, column_sensitivity: internal}
+
+  asp:
+    label: "Average Selling Price"
+    unit: INR_per_unit
+    grain: daily
+    source: orders
+    sql: "SELECT order_date AS d, SUM(net_revenue)/NULLIF(SUM(units),0) AS v FROM orders {where} GROUP BY 1"
+    additive: false               # ratio metric - never sum, always re-aggregate
+    drivers: [tier_mix, discount_pct, category_mix]
+    materiality: {min_abs_inr: 0, min_pct_of_plan: 0.01, min_persistence_days: 5}
+    thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
+    access: {row_filter: region, column_sensitivity: financial}
+
+  otd_pct:
+    label: "On-Time Delivery %"
+    unit: pct
+    grain: daily
+    source: dispatch
+    sql: "SELECT dispatch_date AS d, AVG(CASE WHEN on_time THEN 1.0 ELSE 0.0 END) AS v FROM dispatch {where} GROUP BY 1"
+    additive: false
+    drivers: [warehouse, delay_reason]
+    materiality: {min_abs_inr: 0, min_pct_of_plan: 0.03, min_persistence_days: 2}
+    thresholds: {warn_sigma: 2.0, alert_sigma: 2.5}
+    access: {row_filter: region, column_sensitivity: internal}
+
+  reorder_rate_28d:
+    label: "28-day Reorder Rate"
+    unit: pct
+    grain: weekly
+    source: orders
+    sql: "__derived__"            # computed in Python: window function over account order history
+    additive: false
+    drivers: [otd_pct, asp, service_tickets]
+    materiality: {min_abs_inr: 0, min_pct_of_plan: 0.02, min_persistence_days: 7}
+    thresholds: {warn_sigma: 2.0, alert_sigma: 2.5}
+    access: {row_filter: region, column_sensitivity: internal}
+
+# Business levers the engine is allowed to recommend. An action that does not
+# map to a lever here is not emitted - this is what keeps recommendations
+# inside real decision rights.
+levers:
+  service_credit:
+    label: "Service credit / goodwill adjustment"
+    owner_role: regional_sales_manager
+    decision_right: "RSM up to Rs 25L; above that CFO approval"
+    typical_lead_time_days: 3
+    cost_model: "1-3% of at-risk revenue"
+  named_rep_outreach:
+    label: "Named-rep win-back outreach"
+    owner_role: regional_sales_manager
+    decision_right: "RSM"
+    typical_lead_time_days: 10
+    cost_model: "Rs 8-15k per account (time cost)"
+  warehouse_capacity:
+    label: "Add dispatch shift / reroute to alternate warehouse"
+    owner_role: supply_chain_lead
+    decision_right: "Supply Chain Lead; capex needs COO"
+    typical_lead_time_days: 14
+    cost_model: "Rs 4-6L per month per shift"
+  price_correction:
+    label: "Reprice / withdraw discount tier"
+    owner_role: cfo
+    decision_right: "CFO + Category head"
+    typical_lead_time_days: 7
+    cost_model: "margin impact, modelled"
+  promo_response:
+    label: "Tactical counter-promotion"
+    owner_role: cfo
+    decision_right: "CFO + Category head"
+    typical_lead_time_days: 5
+    cost_model: "budgeted trade spend"
+  monitor_only:
+    label: "Monitor - no intervention"
+    owner_role: data_analyst
+    decision_right: "n/a"
+    typical_lead_time_days: 0
+    cost_model: "zero"
