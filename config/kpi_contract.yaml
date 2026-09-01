@@ -140,33 +140,51 @@ levers:
     decision_right: "RSM up to Rs 25L; above that CFO approval"
     typical_lead_time_days: 3
     cost_model: "1-3% of at-risk revenue"
+    authority_limit_inr: 2500000
+    reversibility: reversible
+    external_facing: true
   named_rep_outreach:
     label: "Named-rep win-back outreach"
     owner_role: regional_sales_manager
     decision_right: "RSM"
     typical_lead_time_days: 10
     cost_model: "Rs 8-15k per account (time cost)"
+    authority_limit_inr: 500000
+    reversibility: reversible
+    external_facing: true
   warehouse_capacity:
     label: "Add dispatch shift / reroute to alternate warehouse"
     owner_role: supply_chain_lead
     decision_right: "Supply Chain Lead; capex needs COO"
     typical_lead_time_days: 14
     cost_model: "Rs 4-6L per month per shift"
+    authority_limit_inr: 6000000
+    reversibility: costly_to_reverse
+    external_facing: false
   price_correction:
     label: "Reprice / withdraw discount tier"
     owner_role: cfo
     decision_right: "CFO + Category head"
     typical_lead_time_days: 7
     cost_model: "margin impact, modelled"
+    authority_limit_inr: 0
+    reversibility: hard_to_reverse
+    external_facing: true
   promo_response:
     label: "Tactical counter-promotion"
     owner_role: cfo
     decision_right: "CFO + Category head"
     typical_lead_time_days: 5
     cost_model: "budgeted trade spend"
+    authority_limit_inr: 5000000
+    reversibility: costly_to_reverse
+    external_facing: true
   monitor_only:
     label: "Monitor - no intervention"
     owner_role: data_analyst
     decision_right: "n/a"
     typical_lead_time_days: 0
     cost_model: "zero"
+    authority_limit_inr: 0
+    reversibility: reversible
+    external_facing: false

@@ -172,7 +172,8 @@ def test_telemetry_reports_latency_and_cost():
     r = go("S1")
     t = r["telemetry"]
     assert t["total_ms"] > 0
-    assert [s["stage"] for s in t["stages"]] == ["sift", "split", "source", "propagate", "solve", "narrate"]
+    assert [s["stage"] for s in t["stages"]] == ["fitness", "sift", "split", "source",
+                                                "propagate", "solve", "narrate"]
     assert "usd" in t["llm"] and "inr" in t["llm"]
 
 
@@ -304,3 +305,104 @@ def test_grain_limits_are_reported_not_thrown():
         "a shipment-grain KPI cannot be cut by customer segment, and must say so"
     assert C.sliceable("net_revenue", "segment")
     assert not C.sliceable("otd_pct", "channel")
+
+
+# ============================================================================
+# Enhancements grounded in the two supplied papers.
+#   Olszak & Bartus, Procedia Computer Science 270 (2025) 415-425 (KES 2025)
+#   Prasanth, Vadakkan, Surendran & Thomas, IJACSA 14(6), 2023
+# ============================================================================
+
+# ---- data fitness gate (Olszak & Bartus: quality was the 20/20 barrier) ----
+def test_fitness_gate_runs_before_anything_else():
+    r = go("S1")
+    assert r["telemetry"]["stages"][0]["stage"] == "fitness", \
+        "quality must gate the run, not annotate it afterwards"
+    assert r["data_fitness"]["verdict"] in ("FIT", "FIT_WITH_CAVEATS", "UNFIT")
+
+
+def test_fitness_assesses_all_five_dimensions():
+    r = go("S1")
+    assert set(r["data_fitness"]["dimensions_assessed"]) == {
+        "availability", "timeliness", "completeness", "consistency", "validity"}
+    assert r["data_fitness"]["checks_run"] >= 10
+
+
+def test_fitness_detects_the_class_level_load_failure():
+    """An aggregate row count hides a load that drops one CLASS of row. The
+    WH-4 late shipments stopped arriving; total dispatch volume barely moved."""
+    r = go("S4")
+    issues = r["data_fitness"]["issues"]
+    comp = [i for i in issues if i["dimension"] == "completeness"]
+    assert comp, "class-level completeness failure must be caught"
+    assert any("WH-4" in i["source"] for i in comp)
+    assert any(i["severity"] == "critical" for i in comp)
+
+
+def test_fitness_stays_quiet_on_a_clean_window():
+    from whylayer.fitness import assess
+    from whylayer.telemetry import Telemetry
+    from datetime import date
+    f = assess(C, E, Telemetry(), (date(2026, 6, 1), date(2026, 6, 14)))
+    assert not [i for i in f["issues"] if i["dimension"] == "completeness"], \
+        "a quiet window must not raise completeness noise"
+
+
+def test_fitness_checks_cross_source_referential_integrity():
+    from whylayer.fitness import assess
+    from whylayer.telemetry import Telemetry
+    from datetime import date
+    tel = Telemetry()
+    assess(C, E, tel, (date(2026, 8, 17), date(2026, 8, 30)))
+    what = " ".join(m["what"] for m in tel.methods)
+    assert "no parent order" in what and "before their order" in what
+
+
+# ---- decision-rights router (Prasanth et al. human-AI division taxonomy) ----
+def test_high_evidence_reversible_action_is_ai_led():
+    r = go("S6")
+    promo = next(x for x in r["recommendations"] if x["lever"] == "promo_response")
+    assert promo["delegation"]["mode"] == "AI_LED_HUMAN_APPROVES"
+
+
+def test_impact_above_authority_limit_escalates_the_mode():
+    r = run("S1", "cfo", C, E, force_offline=True)
+    sc = next(x for x in r["recommendations"] if x["lever"] == "service_credit")
+    d = sc["delegation"]
+    assert d["expected_impact_inr"] > d["authority_limit_inr"]
+    assert d["mode"] == "HUMAN_LED_AI_SUPPORTS"
+    assert not d["within_authority"]
+    assert any("authority limit" in x for x in d["reasons"])
+
+
+def test_irreversible_lever_is_never_ai_led():
+    r = run("S1", "cfo", C, E, force_offline=True)
+    pc = next(x for x in r["recommendations"] if x["lever"] == "price_correction")
+    assert pc["delegation"]["reversibility"] == "hard_to_reverse"
+    assert pc["delegation"]["mode"] != "AI_LED_HUMAN_APPROVES"
+
+
+def test_abstention_routes_to_human_only():
+    r = go("S2")
+    assert all(x["delegation"]["mode"] == "HUMAN_ONLY_AI_ABSTAINS"
+               for x in r["recommendations"])
+
+
+def test_full_delegation_is_reserved_and_never_used():
+    for sc in ["S1", "S2", "S3", "S4", "S6"]:
+        for p in ["cfo", "data_analyst"]:
+            for x in run(sc, p, C, E, force_offline=True)["recommendations"]:
+                assert x["delegation"]["mode"] != "AI_DELEGATED"
+    pol = go("S1")["delegation_policy"]
+    assert pol["reserved_unused"]["mode"] == "AI_DELEGATED"
+    assert pol["reserved_unused"]["why"]
+
+
+# ---- decision latency (their top-cited benefit: speed, 17/20) ----
+def test_decision_latency_is_computed_not_asserted():
+    r = go("S1")
+    l = r["decision_latency"]
+    assert l["days_cause_to_detectable"] > 0
+    assert l["engine_could_flag_on"] > l["cause_onset"]
+    assert l["persistence_required_days"] == \
+        C.get_kpi("net_revenue")["materiality"]["min_persistence_days"]

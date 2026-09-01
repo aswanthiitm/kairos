@@ -47,6 +47,7 @@ async function run(){
 
 function render(d){
   if (d.verdict.status === 'ENTITLEMENT_DENIED') return renderDenied(d);
+  if (d.verdict.status === 'UNFIT_DATA') return renderUnfit(d);
   const m = d.movement, v = d.verdict;
   const restricted = (d.evidence_packet.restricted_fields || []).length > 0;
   $('#main').innerHTML = `
@@ -55,9 +56,11 @@ function render(d){
     ${cardMovement(d, m, restricted)}
     ${cardSplit(d, restricted)}
     ${cardMechanism(d, restricted)}
+    ${cardLatency(d)}
     ${cardRecs(d)}
   </div>
   <div class="col">
+    ${cardFitness(d)}
     ${cardPersona(d)}
     ${cardHypotheses(d)}
     ${cardSeparating(d)}
@@ -265,6 +268,10 @@ function cardRecs(d){
       <div><div class="k">lead time</div><div class="v">${r.lead_time_days}d</div></div>
       <div><div class="k">review in</div><div class="v">${r.monitoring.check_in_days}d</div></div>
     </div>
+    ${r.delegation?`<div class="deleg">
+      <b>${esc(r.delegation.label)}</b> — the machine may ${esc(r.delegation.machine_may)}.
+      Human role: <b>${esc(r.delegation.human_role)}</b>.
+      <ul>${r.delegation.reasons.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}
     <div style="margin-top:8px;font-size:11.5px;color:var(--ink3)">
       ${esc(r.expected_impact_note)}<br>decision right: ${esc(r.decision_right)} ·
       success: ${esc(r.monitoring.success_criterion)}<br>
@@ -273,6 +280,47 @@ function cardRecs(d){
         ${r.source_playbook.caveat?'· caveat: '+esc(r.source_playbook.caveat):''}`:'no playbook match'}<br>
       basis: ${esc(r.confidence_basis)}</div></div>`).join('');
   return `<div class="card"><div class="chead"><span class="ctitle">Solve — driver → lever → action → impact → owner → confidence → monitoring</span></div>${items}</div>`;
+}
+
+function renderUnfit(d){
+  const f=d.data_fitness;
+  $('#main').innerHTML=`<div class="card span">
+    <div class="chead"><span class="ctitle">Data fitness gate</span>
+      <span class="badge b-data_quality">Unfit &middot; analysis halted</span></div>
+    <div class="split-note"><b>${esc(d.narrative.text)}</b></div>
+    <div style="margin-top:12px">${f.issues.map(i=>`<div class="doc">
+      <b>${esc(i.severity)} &middot; ${esc(i.dimension)} &middot; ${esc(i.source)}</b>
+      ${esc(i.detail)} &mdash; <em>${esc(i.implication)}</em></div>`).join('')}</div></div>`;
+}
+
+function cardFitness(d){
+  const f=d.data_fitness; if(!f) return '';
+  const cls={FIT:'b-confirmed',FIT_WITH_CAVEATS:'b-competing',UNFIT:'b-data_quality'}[f.verdict];
+  return `<div class="card">
+    <div class="chead"><span class="ctitle">Data fitness &mdash; gate runs before analysis</span>
+      <span class="badge ${cls}">${esc(f.verdict.replace(/_/g,' '))} &middot; ${(100*f.score).toFixed(0)}%</span></div>
+    <div style="font-size:12px;color:var(--ink3);margin-bottom:9px">
+      ${f.checks_run} checks across ${f.dimensions_assessed.join(', ')}. ${esc(f.gate.meaning)}</div>
+    ${f.issues.length?f.issues.map(i=>`<div class="test">
+      <i>${esc(i.severity)}</i><span><b>${esc(i.source)}</b> &middot; ${esc(i.detail)}<br>
+      <span style="color:var(--ink3)">${esc(i.implication)}</span></span></div>`).join('')
+      :'<div style="font-size:12px;color:var(--good)">every source cleared its checks</div>'}
+    <div style="margin-top:9px;font-size:10.5px;color:var(--ink3);font-family:var(--mono)">
+      gate exists because data quality was the only barrier cited by all 20 organisations in ${esc(f.citation)}</div>
+  </div>`;
+}
+
+function cardLatency(d){
+  const l=d.decision_latency; if(!l) return '';
+  return `<div class="card">
+    <div class="chead"><span class="ctitle">Decision latency &mdash; how fast this could be known</span></div>
+    <div class="recgrid">
+      <div><div class="k">cause began</div><div class="v">${esc(l.cause_onset)}</div></div>
+      <div><div class="k">effect visible</div><div class="v">${esc(l.effect_onset)}</div></div>
+      <div><div class="k">engine could flag</div><div class="v">${esc(l.engine_could_flag_on)}</div></div>
+      <div><div class="k">cause &rarr; flag</div><div class="v">${l.days_cause_to_detectable}d</div></div>
+    </div>
+    <div style="margin-top:9px;font-size:11.5px;color:var(--ink3)">${esc(l.note)}</div></div>`;
 }
 
 function cardPersona(d){

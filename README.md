@@ -143,6 +143,91 @@ to be trusted on faith.
 
 ---
 
+## Grounded in the literature, where the literature actually says something
+
+Two papers shaped the current build. They are cited for what they support and
+nothing more.
+
+### Data quality is a gate, not a caveat
+
+Olszak & Bartuś, *AI-enhanced Business Intelligence for decision-making*, **Procedia
+Computer Science 270 (2025) 415–425 (KES 2025)** — in-depth interviews across 20
+organisations in services, trade and manufacturing. Their barrier ranking is
+unambiguous:
+
+| Barrier | Respondents |
+|---|---|
+| **Data availability and quality** | **20 / 20 — unanimous** |
+| Integrating diverse sources, consistency and accuracy | 18 / 20 |
+| High implementation cost | 15 / 20 |
+| Shortage of AI/BI specialists | 12 / 20 |
+| Integration with existing BI systems | 11 / 20 |
+| Security and regulatory concerns | 10 / 20 |
+
+If the only universal obstacle is data quality, it cannot live inside one detector.
+`whylayer/fitness.py` runs **first** and can stop the analysis, assessing five
+dimensions — availability, timeliness, completeness, consistency, validity —
+across every source the run touches, and returning **FIT / FIT_WITH_CAVEATS / UNFIT**.
+
+The consistency checks are cross-source, because source integration was their
+second-ranked barrier: shipments referencing orders that do not exist, shipments
+dated before their own order, CRM accounts missing from the account master.
+
+It also found a real hole in my own earlier work. The original partial-load check
+compared **total** dispatch rows, which cannot see a load that drops one *class* of
+row. The WH-4 failure rows stopped arriving while total volume barely moved:
+
+```
+[critical] dispatch/WH-4  failure rows have almost stopped arriving: 0.8% late now
+                          against 6.3% on the trailing baseline
+                          -> a whole CLASS of row is missing, so this KPI will
+                             appear to improve when nothing improved
+```
+
+### Speed is measured, not claimed
+
+Their top-cited *benefit* was speed of decision-making (17/20). So the engine computes
+it instead of asserting it — `decision_latency` reports when the cause began, when the
+effect became visible, and the first date the engine could legitimately have fired
+given the persistence its own materiality rule demands:
+
+```
+cause began 2026-08-05 -> effect visible 2026-08-17 -> engine could flag 2026-08-20
+15 days cause-to-flag, 10 days before the window even closes
+```
+
+Where the movement is still building, it says so rather than flattering itself:
+*"detection lands 3 days after this window closes — the movement was still building
+when the period ended."*
+
+### Decision rights become machine-checkable
+
+Prasanth, Vadakkan, Surendran & Thomas, *Role of Artificial Intelligence and Business
+Decision Making*, **IJACSA 14(6), 2023**, Fig. 4 — a taxonomy of human–AI decision
+division (aggregated human-AI choice generation, full delegation, hybrid AI-human
+sequential choice), with Trunk et al. on decision-making under uncertainty.
+
+This is a narrative literature review with no algorithms, so it is used only for that
+taxonomy. It closed a real gap: `decision_right: "RSM up to Rs 25L; above that CFO
+approval"` was prose the engine could print but never check. `whylayer/delegation.py`
+now **derives** the collaboration mode from evidence grade × value at risk against the
+owner's authority limit × reversibility of the lever:
+
+| Recommendation | Mode | Why |
+|---|---|---|
+| Counter-promotion (S6, ₹0.7L) | `AI_LED_HUMAN_APPROVES` | L3, reversible, inside authority |
+| Service credit (S1, ₹44.6L) | `HUMAN_LED_AI_SUPPORTS` | L3, but **exceeds the RSM's ₹25L limit** |
+| Price correction | `HUMAN_LED_AI_SUPPORTS` | hard to reverse — the machine may not single it out |
+| Anything under abstention | `HUMAN_ONLY_AI_ABSTAINS` | no cause established |
+| — | `AI_DELEGATED` | **reserved and deliberately never assigned** |
+
+Every lever is externally visible to a customer, moves money, or both. Full delegation
+exists in the taxonomy and is left empty on purpose, and a test asserts it stays empty.
+That makes EU AI Act Art. 14 human oversight an inspectable property of each
+recommendation rather than a policy sentence.
+
+---
+
 ## Architecture
 
 ```
@@ -162,11 +247,13 @@ to be trusted on faith.
 
 | Stage | File | What it refuses to do |
 |---|---|---|
+| FITNESS | `whylayer/fitness.py` | analyse an estate that fails its quality gate |
 | SIFT | `whylayer/sift.py` | wake anyone for a statistically real but immaterial move |
 | PROPAGATE | `whylayer/propagation.py` | measure an upstream hop in its effect's window |
 | SPLIT | `whylayer/split.py` | leave a residual — the identity closes to <₹1 |
 | SOURCE | `whylayer/evidence.py` | award L3 when the placebo test fails |
 | SOLVE | `whylayer/solve.py` | emit an action whose lever isn't in the contract |
+| DELEGATE | `whylayer/delegation.py` | route any action to full machine delegation |
 | NARRATE | `whylayer/narrate.py` | publish a number that isn't in the evidence packet |
 
 ### The numeric guard
@@ -210,7 +297,7 @@ and the engine raises an advisory rather than hiding it.
 ./run.sh                                   # web UI on :8000
 python cli.py --scenario S1 --persona cfo  # headless
 python cli.py --all                        # every scenario x persona
-python -m pytest tests/ -q                 # 21 tests against planted ground truth
+python -m pytest tests/ -q                 # 47 tests against planted ground truth
 python cli.py --sweep                      # estate triage with suppression accounting
 python cli.py --backtest                   # false-alarm scorecard over history
 python cli.py --reset                      # clear learned state (demos start clean)
@@ -290,10 +377,11 @@ Stated plainly, because the whole thesis is about not overclaiming.
 ```
 config/     semantic contract · causal graph · entitlements · playbooks · LLM pricing
 data/       generator with planted ground truth, DuckDB estate
-whylayer/   contract · security · sources · sift · split · evidence · solve · narrate
-            · pipeline · feedback · telemetry
+whylayer/   contract · security · sources · fitness · sift · split · evidence
+            · propagation · solve · delegation · narrate · triage · pipeline
+            · feedback · telemetry
 app/        FastAPI service + single-page UI (no CDN, no build step)
-tests/      21 tests scored against ground truth
+tests/      47 tests scored against ground truth
 docs/       business proposal
 ```
 

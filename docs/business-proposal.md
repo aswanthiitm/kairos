@@ -86,6 +86,24 @@ under which gate. A historical replay over 20 rolling windows fired once, on the
 event — precision 1.0, and recall 0.25 printed alongside it. Alert fatigue and
 trustworthiness become measured properties rather than claims.
 
+### Data quality as a gate
+
+Olszak & Bartuś (Procedia CS 270, 2025) interviewed 20 organisations across three
+sectors and found data availability and quality to be the only barrier cited by
+**every single respondent**, with source integration second at 18 of 20 — ahead of
+cost, talent and regulation. The engine treats that ranking as an instruction: a
+fitness gate runs before any analysis, assesses five dimensions across every source,
+performs cross-source referential and chronological checks, and is permitted to halt
+the run. A confident narrative built on a broken feed is worse than no narrative.
+
+That gate found a defect in our own earlier work: a completeness check on total row
+counts cannot see a load that drops one *class* of row, which is precisely the failure
+in the data-quality scenario. Partition- and class-level profiling now catches it.
+
+Their top-cited benefit was decision speed, so the engine computes decision latency
+rather than claiming it — cause onset, effect visibility, and the first date it could
+legitimately have fired given its own persistence requirement.
+
 ### The two governors
 
 **The Evidence Ladder** — Bradford Hill's viewpoints (1965) operationalised on Pearl's
