@@ -1,0 +1,910 @@
+<title>Why Layer Internals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+<style>
+:root{
+  --paper:#F6F8F8; --surface:#FFFFFF; --surface2:#EDF1F1;
+  --ink:#12181A; --ink2:#3E4A4D; --ink3:#6B7A7D; --ink4:#93A1A3;
+  --line:#DBE3E3; --line2:#C3CFCF;
+  --accent:#0E7C86; --accent2:#0A5D65; --accent-soft:#E2F0F1;
+  --pass:#2F8F5B; --warn:#B0721A; --crit:#B3423C;
+  --pass-soft:#E6F2EA; --warn-soft:#F7EEDF; --crit-soft:#F6E7E6;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  --serif:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --shadow:0 1px 2px rgba(18,24,26,.05),0 1px 1px rgba(18,24,26,.03);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E1416; --surface:#161E21; --surface2:#1D272A;
+    --ink:#EAF0F0; --ink2:#B7C4C5; --ink3:#869597; --ink4:#6A797B;
+    --line:#283437; --line2:#374548;
+    --accent:#3FB8C2; --accent2:#68D2DA; --accent-soft:#143134;
+    --pass:#4FB57C; --warn:#D69A3D; --crit:#D96A63;
+    --pass-soft:#152820; --warn-soft:#2A2214; --crit-soft:#2B1A19;
+    --shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0E1416; --surface:#161E21; --surface2:#1D272A;
+  --ink:#EAF0F0; --ink2:#B7C4C5; --ink3:#869597; --ink4:#6A797B;
+  --line:#283437; --line2:#374548;
+  --accent:#3FB8C2; --accent2:#68D2DA; --accent-soft:#143134;
+  --pass:#4FB57C; --warn:#D69A3D; --crit:#D96A63;
+  --pass-soft:#152820; --warn-soft:#2A2214; --crit-soft:#2B1A19;
+  --shadow:0 1px 2px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--serif);
+  font-size:16px;line-height:1.68;-webkit-font-smoothing:antialiased}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ---------- shell ---------- */
+.shell{display:grid;grid-template-columns:238px minmax(0,1fr);gap:0;max-width:1240px;margin:0 auto}
+@media(max-width:940px){.shell{grid-template-columns:1fr}}
+.rail{position:sticky;top:0;align-self:start;max-height:100vh;overflow-y:auto;
+  padding:38px 22px 40px 26px;border-right:1px solid var(--line);font-family:var(--sans)}
+@media(max-width:940px){.rail{position:static;max-height:none;border-right:0;
+  border-bottom:1px solid var(--line)}}
+.railtitle{font-family:var(--mono);font-size:10.5px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--ink4);margin-bottom:14px}
+.rail ol{list-style:none;counter-reset:nav;display:flex;flex-direction:column;gap:1px}
+.rail a{counter-increment:nav;display:grid;grid-template-columns:22px 1fr;gap:8px;
+  text-decoration:none;color:var(--ink2);font-size:13px;line-height:1.35;padding:5px 7px;
+  border-radius:5px}
+.rail a::before{content:counter(nav,decimal-leading-zero);font-family:var(--mono);
+  font-size:10px;color:var(--ink4);padding-top:3px}
+.rail a:hover{background:var(--surface2);color:var(--accent)}
+main{padding:38px 44px 110px;min-width:0}
+@media(max-width:940px){main{padding:30px 22px 80px}}
+
+/* ---------- masthead ---------- */
+.mast{border-bottom:2px solid var(--ink);padding-bottom:20px;margin-bottom:14px}
+.eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:12px}
+h1{font-family:var(--sans);font-weight:700;font-size:41px;line-height:1.06;letter-spacing:-.025em;
+  text-wrap:balance;margin-bottom:12px}
+.dek{font-size:18px;line-height:1.55;color:var(--ink2);max-width:64ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}
+.meta span{font-family:var(--mono);font-size:10.5px;color:var(--ink3);
+  border:1px solid var(--line);border-radius:20px;padding:3px 10px;background:var(--surface)}
+
+/* ---------- sections ---------- */
+section{padding-top:44px;scroll-margin-top:16px}
+h2{font-family:var(--sans);font-weight:600;font-size:25px;line-height:1.2;letter-spacing:-.018em;
+  text-wrap:balance;margin-bottom:6px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+h2 .num{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:500;
+  margin-right:11px;letter-spacing:.04em}
+h3{font-family:var(--sans);font-weight:600;font-size:16.5px;line-height:1.3;
+  margin:26px 0 7px;text-wrap:balance}
+h4{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink3);font-weight:500;margin:20px 0 7px}
+p{margin-bottom:13px;max-width:68ch}
+p.lead{font-size:17px;color:var(--ink2);max-width:66ch}
+ul,ol.body{margin:0 0 14px 19px;max-width:66ch}
+li{margin-bottom:6px}
+strong{font-weight:600;color:var(--ink)}
+em{font-style:italic}
+code{font-family:var(--mono);font-size:.855em;background:var(--surface2);
+  border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--ink)}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+
+/* ---------- code blocks ---------- */
+.code{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:6px;margin:14px 0;overflow-x:auto;box-shadow:var(--shadow)}
+.code pre{font-family:var(--mono);font-size:12.4px;line-height:1.62;padding:13px 16px;
+  color:var(--ink2);white-space:pre}
+.code .cap{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink4);padding:8px 16px 0}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:6px;
+  background:var(--surface);box-shadow:var(--shadow)}
+table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:13.2px}
+th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink3);font-weight:500;padding:9px 13px;
+  border-bottom:1px solid var(--line2);white-space:nowrap;background:var(--surface2)}
+td{padding:9px 13px;border-bottom:1px solid var(--line);color:var(--ink2);vertical-align:top;
+  line-height:1.5}
+tbody tr:last-child td{border-bottom:0}
+td.m,th.m{font-family:var(--mono);font-size:11.8px;font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+td strong{color:var(--ink)}
+
+/* ---------- callouts ---------- */
+.note{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--surface);
+  border-radius:6px;padding:14px 17px;margin:16px 0;box-shadow:var(--shadow)}
+.note .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent);margin-bottom:6px}
+.note p{margin-bottom:0;font-size:15px;max-width:64ch}
+.note p + p{margin-top:9px}
+.note.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+.note.warn .lbl{color:var(--warn)}
+.note.crit{border-left-color:var(--crit);background:var(--crit-soft)}
+.note.crit .lbl{color:var(--crit)}
+
+/* ---------- pipeline ---------- */
+.pipe{display:flex;flex-direction:column;gap:0;margin:18px 0}
+.stage{display:grid;grid-template-columns:112px 1fr;gap:16px;padding:13px 0;
+  border-bottom:1px solid var(--line);align-items:start}
+.stage:last-child{border-bottom:0}
+.stage .sname{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);
+  letter-spacing:.05em}
+.stage .sfile{font-family:var(--mono);font-size:10px;color:var(--ink4);margin-top:2px;
+  display:block;letter-spacing:0}
+.stage .sq{font-family:var(--sans);font-size:14.5px;font-weight:600;margin-bottom:3px}
+.stage .sd{font-size:14px;color:var(--ink2);max-width:60ch}
+.stage .sr{font-size:13px;color:var(--ink3);margin-top:5px;font-style:italic}
+.stage .sm{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.chip{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:2px 7px;
+  border-radius:3px;background:var(--surface2);color:var(--ink3);border:1px solid var(--line)}
+.chip.k{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.chip.llm{background:var(--crit-soft);color:var(--crit);border-color:transparent}
+
+/* ---------- ladder ---------- */
+.ladder{display:flex;flex-direction:column;gap:7px;margin:16px 0}
+.rung{display:grid;grid-template-columns:42px 1fr;gap:14px;padding:11px 14px;
+  border:1px solid var(--line);border-radius:6px;background:var(--surface);align-items:start;
+  box-shadow:var(--shadow)}
+.rung .rn{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--accent)}
+.rung .rt{font-family:var(--sans);font-size:14px;font-weight:600;margin-bottom:2px}
+.rung .rd{font-size:13.5px;color:var(--ink2);max-width:58ch}
+.rung .rs{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-top:4px}
+
+/* ---------- key/value grid ---------- */
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:9px;margin:16px 0}
+.kv div{border:1px solid var(--line);border-radius:6px;padding:11px 13px;background:var(--surface);
+  box-shadow:var(--shadow)}
+.kv .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink4);margin-bottom:4px}
+.kv .v{font-family:var(--sans);font-size:19px;font-weight:600;letter-spacing:-.015em;
+  font-variant-numeric:tabular-nums}
+.kv .s{font-size:11.5px;color:var(--ink3);margin-top:2px;font-family:var(--sans)}
+
+/* ---------- question list for the UX section ---------- */
+.q{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:14px 17px;
+  margin-bottom:10px;box-shadow:var(--shadow)}
+.q .qt{font-family:var(--sans);font-size:15px;font-weight:600;margin-bottom:5px;text-wrap:balance}
+.q .qd{font-size:14px;color:var(--ink2);max-width:62ch}
+.q .qd + .qd{margin-top:7px}
+.tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  padding:2px 7px;border-radius:3px;margin-left:8px;vertical-align:2px}
+.tag.open{background:var(--warn-soft);color:var(--warn)}
+.tag.done{background:var(--pass-soft);color:var(--pass)}
+hr{border:0;border-top:1px solid var(--line);margin:30px 0}
+.foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:11px;color:var(--ink4);line-height:1.7}
+</style>
+
+<div class="shell">
+<nav class="rail">
+  <div class="railtitle">Contents</div>
+  <ol>
+    <li><a href="#thesis">The thesis</a></li>
+    <li><a href="#arch">Architecture</a></li>
+    <li><a href="#stages">The seven stages</a></li>
+    <li><a href="#governors">Four governors</a></li>
+    <li><a href="#contract">The contract layer</a></li>
+    <li><a href="#data">Data model</a></li>
+    <li><a href="#security">Security model</a></li>
+    <li><a href="#estate">Estate operations</a></li>
+    <li><a href="#learning">Learning loop</a></li>
+    <li><a href="#toolkit">Toolkit</a></li>
+    <li><a href="#api">API &amp; interfaces</a></li>
+    <li><a href="#tests">Test strategy</a></li>
+    <li><a href="#perf">Cost &amp; latency</a></li>
+    <li><a href="#defects">Defects found</a></li>
+    <li><a href="#limits">Limitations</a></li>
+    <li><a href="#ux">UX: state &amp; questions</a></li>
+    <li><a href="#run">Running it</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="mast">
+  <div class="eyebrow">Developer reference &middot; v3 &middot; 2 September 2026</div>
+  <h1>Why Layer Internals</h1>
+  <p class="dek">Everything behind the KPI intelligence-to-action engine: the thesis it
+  encodes, the seven-stage pipeline, the governance that decides what it is allowed to
+  say, and the toolkit choices with the reasoning kept.</p>
+  <div class="meta">
+    <span>3,784 lines Python</span><span>560 lines UI</span><span>399 lines config</span>
+    <span>47 tests</span><span>5 scenarios</span><span>4 personas</span>
+    <span>4 sources</span><span>5 KPIs</span>
+  </div>
+</header>
+
+<section id="thesis">
+<h2><span class="num">01</span>The thesis</h2>
+<p class="lead">Dashboards detect. They do not explain. The distance between a number
+moving and a person acting on it is measured in days, and that distance is where the
+value sits.</p>
+
+<p>The product is an <strong>explanation layer that sits on top of the BI stack a client
+already owns</strong>. It does not replace the warehouse, the semantic layer, or Power BI.
+It attaches to them and answers the question they structurally cannot: <em>why did this
+move, how sure are we, and what should someone do about it.</em></p>
+
+<h3>The one architectural commitment</h3>
+<p>Everything in the build follows from a single reading of the evidence on what language
+models are and are not good at:</p>
+
+<div class="note">
+  <div class="lbl">Design commitment</div>
+  <p>Large language models are strong at <strong>proposing</strong> causal explanations
+  from world knowledge and near-random at <strong>inferring</strong> causation from
+  correlation. So the model proposes and phrases. It never decides, and it never
+  computes.</p>
+  <p>Kıcıman et al. (TMLR 2024) found LLMs beat existing algorithms on knowledge-based
+  causal tasks — 97% on pairwise causal discovery. The Corr2Cause benchmark (ICLR 2024)
+  tested seventeen models on inferring causation from correlation and found them near
+  random, with fine-tuned versions failing out of distribution. Both are true. The
+  architecture is a direct read of where the split falls.</p>
+</div>
+
+<p>That commitment is enforced by code at runtime, not promised in a diagram. Two
+mechanisms do the enforcing — the closed evidence packet and the numeric guard — and
+both are described in <a href="#governors">section 04</a>. The observable consequence:
+a full run reports <strong>91–100% of its reasoning steps as non-LLM</strong>, and the
+engine produces a complete, correct answer with the model switched off entirely.</p>
+
+<h3>What it refuses to build</h3>
+<p>Cortex Analyst, Databricks Genie and BigQuery Gemini were all generally available by
+mid-2026. Text-to-SQL is a platform feature now, not a product. The engine calls those
+layers rather than competing with them, and owns the three things platforms do not
+ship: <strong>a standard of proof</strong>, <strong>evidence that lives outside the
+warehouse</strong>, and <strong>memory of what worked last time</strong>.</p>
+</section>
+
+<section id="arch">
+<h2><span class="num">02</span>Architecture</h2>
+<p>Four heterogeneous sources feed a seven-stage pipeline. Every stage is wrapped in
+telemetry and declares its own method. Configuration — not code — carries the metric
+definitions, the causal graph, the entitlements and the playbooks.</p>
+
+<div class="code">
+  <div class="cap">System shape</div>
+<pre>  SOURCES                     GOVERNANCE            PIPELINE
+  ┌───────────────────┐      ┌──────────────┐     ┌──────────┐
+  │ orders   DuckDB   │      │ kpi_contract │────▶│ FITNESS  │  gate: may halt the run
+  │ line grain, 60m   │      │ causal_graph │     ├──────────┤
+  ├───────────────────┤      │ entitlements │     │ SIFT     │  is it real, does it matter
+  │ dispatch CSV      │─────▶│ playbooks    │────▶├──────────┤
+  │ shipment, 1440m   │      │ llm_pricing  │     │ SPLIT    │  where exactly
+  ├───────────────────┤      └──────────────┘     ├──────────┤
+  │ interactions JSONL│              │            │ SOURCE   │  why, and how sure
+  │ event, 15m, PII   │              ▼            ├──────────┤
+  ├───────────────────┤      ┌──────────────┐     │PROPAGATE │  where the loss is created
+  │ market   CSV      │      │  security    │────▶├──────────┤
+  │ event, weekly     │      │ row/col/dom  │     │ SOLVE    │  what to do, who owns it
+  └───────────────────┘      └──────────────┘     ├──────────┤
+                                                  │ NARRATE  │  say it, guarded
+                                                  └──────────┘
+                                        ▲                │
+                                        └─── feedback ───┘
+                                     priors · measured outcomes</pre>
+</div>
+
+<h3>Module inventory</h3>
+<div class="tw"><table>
+<thead><tr><th>Module</th><th class="m">Lines</th><th>Responsibility</th></tr></thead>
+<tbody>
+<tr><td class="m">contract.py</td><td class="m">123</td><td>Loads the five YAML configs. Owns causal-path search, blocked-edge checks, lag arithmetic, freshness maths, and per-KPI sliceable dimensions.</td></tr>
+<tr><td class="m">security.py</td><td class="m">114</td><td>Persona model. Compiles row filters into SQL, screens columns and evidence domains, redacts PII.</td></tr>
+<tr><td class="m">sources.py</td><td class="m">140</td><td>The only path to data. DuckDB + JSONL access, freshness probes, KPI series construction including the derived reorder metric.</td></tr>
+<tr><td class="m">fitness.py</td><td class="m">256</td><td>Five-dimension data quality gate across all sources, including cross-source referential and chronological checks.</td></tr>
+<tr><td class="m">sift.py</td><td class="m">203</td><td>Detection: robust seasonal decomposition, MAD control limits, persistence, materiality gate, feed-completeness probe.</td></tr>
+<tr><td class="m">split.py</td><td class="m">186</td><td>Price/volume/mix identity algebra and the Adtributor-style dimension-lattice scan.</td></tr>
+<tr><td class="m">evidence.py</td><td class="m">624</td><td>Largest module. BM25 retrieval, hypothesis generation, graph admissibility, precedence, dose–response, corroboration with conflict scoring, difference-in-differences with placebo, verdict and separating test.</td></tr>
+<tr><td class="m">propagation.py</td><td class="m">159</td><td>Mechanism ledger. Measures every instrumented hop of the causal chain in its own lag-aligned window.</td></tr>
+<tr><td class="m">solve.py</td><td class="m">146</td><td>Playbook matching, impact rescaling, confidence composition, abstention as a first-class recommendation.</td></tr>
+<tr><td class="m">delegation.py</td><td class="m">143</td><td>Routes each recommendation to a human–AI collaboration mode from evidence × authority × reversibility.</td></tr>
+<tr><td class="m">narrate.py</td><td class="m">382</td><td>Evidence packet construction, column redaction, the numeric guard, LLM call with retry, deterministic narrator, simulation modes.</td></tr>
+<tr><td class="m">triage.py</td><td class="m">168</td><td>Estate sweep with suppression accounting; historical replay scorecard.</td></tr>
+<tr><td class="m">pipeline.py</td><td class="m">258</td><td>Orchestrator. Entitlement pre-flight, stage sequencing, advisories, decision latency.</td></tr>
+<tr><td class="m">feedback.py</td><td class="m">127</td><td>Grades, priors, measured outcomes, reset.</td></tr>
+<tr><td class="m">telemetry.py</td><td class="m">107</td><td>Stage timing, token and cost ledger, and the method registry that produces the LLM/non-LLM split.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="stages">
+<h2><span class="num">03</span>The seven stages</h2>
+<p>Each stage is defined as much by what it refuses to do as by what it computes. The
+refusals are the product.</p>
+
+<div class="pipe">
+  <div class="stage">
+    <div><div class="sname">FITNESS<span class="sfile">fitness.py</span></div></div>
+    <div><div class="sq">Is this estate fit to be reasoned over at all?</div>
+      <div class="sd">Five dimensions — availability, timeliness, completeness, consistency,
+      validity — across every source the run touches. Cross-source checks catch shipments
+      referencing orders that do not exist and shipments dated before their own order.
+      Returns FIT, FIT_WITH_CAVEATS or UNFIT.</div>
+      <div class="sr">Refuses to analyse an estate that fails the gate. UNFIT halts the run.</div>
+      <div class="sm"><span class="chip k">RULES</span><span class="chip">SQL</span></div></div>
+  </div>
+  <div class="stage">
+    <div><div class="sname">SIFT<span class="sfile">sift.py</span></div></div>
+    <div><div class="sq">Is the change real, and does it matter?</div>
+      <div class="sd">Median-based weekly seasonal index so the anomaly cannot contaminate
+      the baseline built to detect it. Robust sigma from the MAD of pre-window residuals.
+      Then a materiality gate: rupee floor, share of period plan, and persistence in days.</div>
+      <div class="sr">Refuses to wake anyone for a statistically real but immaterial move.</div>
+      <div class="sm"><span class="chip k">STATISTICS</span><span class="chip k">RULES</span><span class="chip">SQL</span></div></div>
+  </div>
+  <div class="stage">
+    <div><div class="sname">SPLIT<span class="sfile">split.py</span></div></div>
+    <div><div class="sq">Where exactly did it happen?</div>
+      <div class="sd">Revenue = volume × price is an identity, so the movement decomposes
+      exactly into volume, mix and rate with no model. Separately, a dimension-lattice scan
+      ranked by explanatory power weighted by share shift, following Adtributor (NSDI 2014).</div>
+      <div class="sr">Refuses to leave a residual. The identity closes to under ₹1.</div>
+      <div class="sm"><span class="chip k">DETERMINISTIC</span><span class="chip">SQL</span></div></div>
+  </div>
+  <div class="stage">
+    <div><div class="sname">SOURCE<span class="sfile">evidence.py</span></div></div>
+    <div><div class="sq">Why, and how sure are we?</div>
+      <div class="sd">Rule-based hypothesis generation from the contribution scan, the causal
+      graph and the event calendar. Each candidate is tested for graph admissibility,
+      temporal precedence against the declared lag, dose–response gradient, corroboration
+      with conflict scoring, and a difference-in-differences with a placebo test.</div>
+      <div class="sr">Refuses to award L3 when the placebo fails, and refuses any hypothesis
+      with no admissible mechanism.</div>
+      <div class="sm"><span class="chip k">CAUSAL</span><span class="chip k">STATISTICS</span><span class="chip k">RETRIEVAL</span><span class="chip">SQL</span></div></div>
+  </div>
+  <div class="stage">
+    <div><div class="sname">PROPAGATE<span class="sfile">propagation.py</span></div></div>
+    <div><div class="sq">Where in the chain is the loss created?</div>
+      <div class="sd">Walks the mechanism path and measures every hop with a governed KPI
+      against the same untreated cohort — each in a window shifted back by that hop's
+      cumulative declared lag. Latent nodes are named, not skipped. Trailing metrics report
+      how much of their window is actually post-onset.</div>
+      <div class="sr">Refuses to measure an upstream cause in its effect's window.</div>
+      <div class="sm"><span class="chip k">CAUSAL</span><span class="chip">SQL</span></div></div>
+  </div>
+  <div class="stage">
+    <div><div class="sname">SOLVE<span class="sfile">solve.py</span></div></div>
+    <div><div class="sq">What should someone actually do?</div>
+      <div class="sd">Recommendations are retrieved from playbook memory — past interventions
+      with measured outcomes — matched on pattern signature and rescaled to the value now at
+      risk. Then routed to a human–AI collaboration mode by <code>delegation.py</code>.</div>
+      <div class="sr">Refuses to emit an action whose lever is not declared in the contract,
+      and refuses to dress a generic suggestion as institutional memory when similarity is
+      below 0.45.</div>
+      <div class="sm"><span class="chip k">RETRIEVAL</span><span class="chip k">RULES</span></div></div>
+  </div>
+  <div class="stage">
+    <div><div class="sname">NARRATE<span class="sfile">narrate.py</span></div></div>
+    <div><div class="sq">How do we say it in this reader's language?</div>
+      <div class="sd">The model receives a closed JSON evidence packet of already-computed
+      facts, with no tools and no data access. Column entitlements are applied to the packet
+      itself, so a denied figure never reaches the prompt. Afterwards every number in the
+      output is parsed and matched against the packet.</div>
+      <div class="sr">Refuses to publish a number that is not in the packet. Fails, retries
+      once, then falls back to the deterministic narrator.</div>
+      <div class="sm"><span class="chip llm">LLM</span><span class="chip k">DETERMINISTIC</span></div></div>
+  </div>
+</div>
+
+<div class="note">
+  <div class="lbl">Why the order matters</div>
+  <p>Fitness runs before SIFT because a stale or partial feed produces movements that look
+  exactly like business events. Propagate runs after SOURCE because it needs the confirmed
+  mechanism path. Narrate runs last and receives nothing but conclusions — it cannot reach
+  back into the data even if the prompt asked it to.</p>
+</div>
+</section>
+
+<section id="governors">
+<h2><span class="num">04</span>Four governors</h2>
+<p>These are the mechanisms that decide what the engine is permitted to say. They are the
+difference between this and an insight generator.</p>
+
+<h3>The Evidence Ladder</h3>
+<p>Bradford Hill's nine viewpoints (1965) operationalised on Pearl's causal hierarchy
+(CACM, 2019). Hill was explicit that his viewpoints are not a checklist and none is a
+<em>sine qua non</em> — which is the argument for a graded ladder rather than a pass/fail
+causality test. <strong>Nothing below L2 is ever phrased as a cause.</strong></p>
+
+<div class="ladder">
+  <div class="rung"><div class="rn">L0</div><div>
+    <div class="rt">Co-movement</div>
+    <div class="rd">Two series moved together. Never stated as a cause.</div>
+    <div class="rs">language permitted: “moved alongside”</div></div></div>
+  <div class="rung"><div class="rn">L1</div><div>
+    <div class="rt">Precedence and gradient</div>
+    <div class="rd">The cause began before the effect, and the gap matches the lag the causal
+    graph declares for that mechanism. Optionally reinforced by a monotone dose–response
+    gradient across exposure buckets.</div>
+    <div class="rs">language permitted: “associated with”</div></div></div>
+  <div class="rung"><div class="rn">L2</div><div>
+    <div class="rt">Independent corroboration</div>
+    <div class="rd">Unstructured evidence from sources that do not share a pipeline agrees —
+    at least three on-theme documents, two independent source types, two distinct accounts —
+    <em>and</em> conflicting evidence is below 40%.</div>
+    <div class="rs">language permitted: “likely cause”</div></div></div>
+  <div class="rung"><div class="rn">L3</div><div>
+    <div class="rt">Counterfactual</div>
+    <div class="rd">Difference-in-differences against a real untreated cohort, estimated on the
+    log-ratio series so common shocks difference out, with a placebo test on the pre-period
+    that must validate before the rung is awarded.</div>
+    <div class="rs">language permitted: “quantified at −13.4%, p&lt;0.0001”</div></div></div>
+</div>
+
+<div class="note">
+  <div class="lbl">A subtlety worth knowing</div>
+  <p>The ladder is <strong>not strictly cumulative</strong>. L3 does not require L2, because
+  a validated counterfactual is stronger evidence than corroborating text and needs no text
+  at all. This matters in practice: the CFO persona is denied CRM verbatims, so it can never
+  reach L2 — but it still reaches L3 on structured evidence that was sitting right there.</p>
+</div>
+
+<h3>The Ambiguity Protocol</h3>
+<p>When explanations tie, the engine returns <strong>Confirmed / Competing / Unknown</strong>,
+shows the rivals side by side, and prices <strong>the cheapest test that separates
+them</strong>. Ambiguity becomes a next step rather than a hedge. Showing rival hypotheses
+by default is a cognitive forcing function — Buçinca et al. (CSCW 2021) found these
+measurably reduce over-reliance on incorrect AI suggestions.</p>
+
+<h3>The Numeric Guard</h3>
+<p>Post-generation, every number in the narrative is parsed and matched against the evidence
+packet within a 1% tolerance that survives legitimate rounding. Unverifiable figures fail
+the narrative, which is retried once and then replaced by the deterministic narrator.</p>
+
+<div class="code">
+  <div class="cap">narrate.py — the guard in practice</div>
+<pre>numeric_guard("Revenue fell Rs 1.85 Cr, down 16.1%.", packet)
+→ (True,  [])
+
+numeric_guard("Revenue fell Rs 4.2 Cr, margin lost 9.7%.", packet)
+→ (False, ['4.2'])          # ₹4.2 Cr is absent from the packet → narrative fails</pre>
+</div>
+
+<h3>The domain causal graph</h3>
+<p>Twelve nodes, twelve edges, four explicit blocks. Its only job is to <strong>reject
+hypotheses with no defensible mechanism</strong> before they are scored or shown. The blocks
+exist because a fluent model will happily invent the connection: weather → reorder behaviour,
+competitor promotion → our own dispatch performance. Each edge carries a lag in days, and
+that lag is load-bearing — it is what the precedence test checks against and what the
+mechanism ledger aligns its measurement windows to.</p>
+</section>
+
+<section id="contract">
+<h2><span class="num">05</span>The contract layer</h2>
+<p class="lead">Five YAML files, 399 lines. This is the surface a client tunes, and the
+reason the engine is portable across sectors without touching Python.</p>
+
+<div class="tw"><table>
+<thead><tr><th>File</th><th class="m">Lines</th><th>Carries</th></tr></thead>
+<tbody>
+<tr><td class="m">kpi_contract.yaml</td><td class="m">190</td><td>Source definitions with grain, refresh cadence and freshness SLA. Five KPIs with SQL, additivity, drivers, materiality thresholds, sliceable dimensions, lineage and access class. Six business levers with owner, decision right, authority limit, reversibility and external-facing flag.</td></tr>
+<tr><td class="m">causal_graph.yaml</td><td class="m">47</td><td>Nodes with observables and type (operational, latent, behavioural, commercial, external, instrumentation). Edges with sign, lag and a defensible mechanism sentence. Explicit blocks with reasons.</td></tr>
+<tr><td class="m">entitlements.yaml</td><td class="m">70</td><td>Four personas with row filters, denied columns, denied evidence domains, PII policy, and narrative shape — depth, focus, word limit, delivery channel.</td></tr>
+<tr><td class="m">playbooks.yaml</td><td class="m">79</td><td>Three seeded interventions with pattern signature, actions, and <em>measured</em> outcome including recovery rate, weeks to effect, cost and the measurement method used.</td></tr>
+<tr><td class="m">llm_pricing.yaml</td><td class="m">13</td><td>Per-model token prices, FX rate, and the routing policy that maps job type to the cheapest model clearing the bar.</td></tr>
+</tbody></table></div>
+
+<h3>Two rules the contract enforces absolutely</h3>
+<ul>
+<li><strong>An undeclared KPI cannot be computed.</strong> <code>get_kpi()</code> raises on
+anything not in the contract. This is what stops a model inventing a metric definition.</li>
+<li><strong>An undeclared lever cannot be recommended.</strong> An action whose lever is not
+in the contract is dropped before emission, which is what keeps recommendations inside real
+decision rights.</li>
+</ul>
+
+<div class="note">
+  <div class="lbl">Recent change</div>
+  <p>Decision rights used to be prose — <code>"RSM up to Rs 25L; above that CFO approval"</code>
+  — that the engine could print but never check. Levers now carry
+  <code>authority_limit_inr</code>, <code>reversibility</code> and <code>external_facing</code>,
+  which makes the delegation router possible.</p>
+</div>
+</section>
+
+<section id="data">
+<h2><span class="num">06</span>Data model</h2>
+<p>A synthetic estate for a mid-size Indian packaged-foods business: roughly ₹107 Cr of
+monthly revenue across four regions, 124 accounts and four warehouses. Seeded and fully
+reproducible.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Source</th><th>Format</th><th>Grain</th><th class="m">Refresh</th><th class="m">Rows</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>orders</strong></td><td>DuckDB</td><td>order line</td><td class="m">60 min</td><td class="m">45,065</td><td>15 columns. The commercial spine.</td></tr>
+<tr><td><strong>dispatch</strong></td><td>CSV</td><td>shipment</td><td class="m">1440 min</td><td class="m">27,592</td><td>Deliberately stale and deliberately incomplete.</td></tr>
+<tr><td><strong>interactions</strong></td><td>JSONL</td><td>event</td><td class="m">15 min</td><td class="m">1,445</td><td>Unstructured text with real PII. Tickets, call transcripts, field notes, email.</td></tr>
+<tr><td><strong>market_events</strong></td><td>CSV</td><td>event</td><td class="m">weekly</td><td class="m">5</td><td>External promo and launch calendar.</td></tr>
+</tbody></table></div>
+
+<h3>The five KPIs are causally connected, not just co-located</h3>
+<div class="code">
+  <div class="cap">The chain the graph declares — and the engine measures</div>
+<pre>otd_pct ──10d──▶ reorder_rate_28d ──▶ order_volume ──▶ net_revenue
+                                            ▲               ▲
+                                            └──── asp ──────┘
+                                     (identity: revenue = volume × price)</pre>
+</div>
+
+<h3>Planted ground truth</h3>
+<p>Every scenario buries a known answer in the data so the engine can be <em>scored</em>
+rather than admired. <code>ground_truth.json</code> is written by the generator and the test
+suite asserts against it.</p>
+
+<div class="tw"><table>
+<thead><tr><th>ID</th><th>Scenario</th><th>What is planted</th><th>Expected verdict</th></tr></thead>
+<tbody>
+<tr><td class="m">S1</td><td>North revenue −18.8%</td><td>WH-3 dispatch SLA collapse → three named accounts cut reorder cadence at a 10-day lag; plus a Discount-tier mix shift</td><td><strong>CONFIRMED · L3</strong></td></tr>
+<tr><td class="m">S2</td><td>West volume −8.9%</td><td>A competitor promotion and our own price rise starting the same day, same channel mix, no clean control</td><td><strong>COMPETING</strong></td></tr>
+<tr><td class="m">S3</td><td>New category, 19 days</td><td>Too short to fit seasonality</td><td><strong>INSUFFICIENT_HISTORY</strong></td></tr>
+<tr><td class="m">S4</td><td>WH-4 on-time delivery “improves”</td><td>Late-shipment rows silently stopped loading</td><td><strong>DATA_QUALITY</strong></td></tr>
+<tr><td class="m">S6</td><td>South modern trade −18.9%</td><td>Competitor promotion hitting one channel only, so other South channels are an untreated control; plus field reports</td><td><strong>CONFIRMED · L3</strong></td></tr>
+</tbody></table></div>
+
+<p>S2 and S6 are deliberate mirrors: the same class of external cause, one confounded by
+design and one clean. The pair is what makes the abstention in S2 read as judgement rather
+than weakness.</p>
+
+<div class="note warn">
+  <div class="lbl">Known property of synthetic data</div>
+  <p>Effect sizes are recovered <em>because they were planted</em>. On real client data the
+  honest expectation is more L1 and L2 and considerably fewer L3s — a validated
+  counterfactual needs a genuinely untreated cohort, and often one does not exist.</p>
+</div>
+</section>
+
+<section id="security">
+<h2><span class="num">07</span>Security model</h2>
+<p class="lead">Entitlements are applied to the data and the evidence set <strong>before
+anything reaches a prompt</strong>. Post-filtering generated text is not a control an
+auditor will accept — a model that has seen a number will leak it.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Persona</th><th>Row</th><th>Column</th><th>Domain</th><th>Result on S1</th></tr></thead>
+<tbody>
+<tr><td><strong>CFO</strong></td><td>all regions</td><td>—</td><td>no CRM verbatims</td><td>L3 via counterfactual; 23 evidence items withheld</td></tr>
+<tr><td><strong>RSM North</strong></td><td class="m">region = North</td><td>no margin</td><td>—</td><td>L3; 4 items withheld; refused outright on a West query</td></tr>
+<tr><td><strong>Supply Chain</strong></td><td>all regions</td><td>no ₹ at all</td><td>no verbatims</td><td>Movement shown as % only; packet holds no currency figure</td></tr>
+<tr><td><strong>Analyst</strong></td><td>all regions</td><td>—</td><td>—</td><td>Full method detail and lineage</td></tr>
+</tbody></table></div>
+
+<h3>Three enforcement points</h3>
+<ol class="body">
+<li><strong>Pre-flight refusal.</strong> A persona whose row entitlement does not intersect
+the requested scope is refused <em>before the query runs</em>. We never execute and return an
+empty result, because “no data” and “not allowed to see this data” are different answers and
+conflating them discloses what exists.</li>
+<li><strong>SQL compilation.</strong> Row filters are compiled into the WHERE clause, so
+restricted rows never enter a dataframe.</li>
+<li><strong>Packet redaction.</strong> Denied measures are replaced in the evidence packet
+itself, so the value cannot reach the model. A test asserts the Supply Chain packet contains
+no rupee figure anywhere in its JSON.</li>
+</ol>
+
+<div class="note">
+  <div class="lbl">An honest result kept rather than hidden</div>
+  <p>A narrower entitlement can produce genuinely <em>weaker evidence</em>: a row filter
+  shrinks the untreated cohort available for a counterfactual. When that happens the engine
+  raises an explicit advisory saying so, rather than silently returning a lower grade.</p>
+</div>
+</section>
+
+<section id="estate">
+<h2><span class="num">08</span>Estate operations</h2>
+<p>Two capabilities that answer the questions a monitoring product is always asked and
+rarely answers with a number.</p>
+
+<h3>Sweep — what should I look at today?</h3>
+<p>Scans every governed KPI across every slice, applies the materiality gate, and reports
+not only what survived but <strong>how much was suppressed and under which gate</strong>.
+Alert fatigue is treated as a measurable property.</p>
+
+<div class="code">
+  <div class="cap">python cli.py --sweep</div>
+<pre>scanned 73 slices → 24 material, 9 data-quality, 16 insufficient history, 24 suppressed
+                    (signal-to-noise 32.9%)
+suppressed because:
+  persistence     20   did not persist for the required number of days
+  statistical      8   inside the expected band once seasonality is removed
+  pct_of_plan      4   movement is too small a share of the period plan
+  abs_inr          1   below the rupee materiality floor in the contract
+grain-blocked: otd_pct × segment — measured at shipment grain, which does not carry 'segment'</pre>
+</div>
+
+<p>The sweep also shrinks with entitlement: the analyst scans 73 slices, the North RSM 58.
+And grain mismatches are <em>reported</em>, not raised — a shipment-grain KPI genuinely
+cannot be cut by customer segment, and that is a fact about the estate worth surfacing.</p>
+
+<h3>Backtest — how often does it cry wolf?</h3>
+<p>Replays the engine over rolling historical windows and scores its alert rate against
+periods where something was actually happening.</p>
+
+<div class="kv">
+  <div><div class="k">Windows tested</div><div class="v">20</div><div class="s">14-day, 7-day step</div></div>
+  <div><div class="k">Alerts fired</div><div class="v">1</div><div class="s">rate 0.05</div></div>
+  <div><div class="k">Precision</div><div class="v">1.00</div><div class="s">zero false positives</div></div>
+  <div><div class="k">Recall</div><div class="v">0.25</div><div class="s">reported, not hidden</div></div>
+</div>
+
+<p>Recall of 0.25 stays in the output deliberately. The SLA event spans four windows and only
+became material in the last one. An engine that cannot report its own false-alarm rate is
+asking to be trusted on faith.</p>
+</section>
+
+<section id="learning">
+<h2><span class="num">09</span>Learning loop</h2>
+<p>Three things happen when an analyst grades a narrative or an outcome lands.</p>
+<ol class="body">
+<li><strong>The grade is stored</strong> as a labelled example, so the evaluation set grows
+itself.</li>
+<li><strong>A rejected hypothesis is down-weighted.</strong> Priors multiply into the leader
+ranking, so a repeatedly-rejected explanation sinks. Weights are clamped to [0.35, 1.6] so
+feedback cannot drive a hypothesis to zero or dominance.</li>
+<li><strong>A measured outcome re-estimates the playbook's effect size</strong> as a weighted
+mean over observations, so recommendations are calibrated by this company's own track
+record.</li>
+</ol>
+<p>State lives in <code>runtime/</code> and is gitignored. <code>cli.py --reset</code> and
+<code>POST /api/reset</code> clear it, because a system that learns needs an explicit way to
+forget and demos must start from a known point.</p>
+
+<div class="note warn">
+  <div class="lbl">Scope of the claim</div>
+  <p>The learning is shallow and should be described that way. Priors re-weight ranking and
+  outcomes re-estimate effect sizes. Nothing is fine-tuned, and no model weights change.</p>
+</div>
+</section>
+
+<section id="toolkit">
+<h2><span class="num">10</span>Toolkit</h2>
+<p class="lead">Eleven dependencies. Every one is load-bearing, and the notable choices are
+the ones we <em>didn't</em> make.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Tool</th><th>Role</th><th>Why this one</th></tr></thead>
+<tbody>
+<tr><td class="m">duckdb</td><td>Analytical SQL engine</td><td>Runs in-process from a single file with no server and no account, so a judge can clone and run. Maps cleanly onto Snowflake or Databricks SQL later.</td></tr>
+<tr><td class="m">pandas / numpy</td><td>Series and frame maths</td><td>The decomposition, seasonal index and cohort arithmetic.</td></tr>
+<tr><td class="m">scipy</td><td>Spearman rank test, normal CDF</td><td>Dose–response significance and the DiD p-value. Two functions, but the alternative is hand-rolling statistics badly.</td></tr>
+<tr><td class="m">pyyaml</td><td>Contract loading</td><td>The five config files are the product surface; YAML keeps them reviewable by a non-engineer.</td></tr>
+<tr><td class="m">fastapi + uvicorn</td><td>HTTP service</td><td>Typed request models, automatic validation, zero-config ASGI.</td></tr>
+<tr><td class="m">pydantic</td><td>Request schemas</td><td>Feedback and outcome payload validation.</td></tr>
+<tr><td class="m">anthropic</td><td>Narration client</td><td>Optional. The engine runs complete without it.</td></tr>
+</tbody></table></div>
+
+<h3>Deliberate non-choices</h3>
+<ul>
+<li><strong>No vector database.</strong> BM25 over a segment- and window-scoped slice reads a
+few hundred documents per insight rather than embedding a corpus. This is what keeps evidence
+retrieval affordable <em>per insight</em>. At production corpus sizes this would need a vector
+index — stated as a limitation, not hidden.</li>
+<li><strong>No ORM.</strong> All SQL is generated from the semantic contract. Model-authored
+SQL is never executed.</li>
+<li><strong>No frontend framework and no build step.</strong> 386 lines of vanilla JS, inline
+SVG charts, no CDN. The UI is a demonstration surface, and a build toolchain would be one more
+thing for a reviewer to get working.</li>
+<li><strong>No orchestration framework.</strong> The pipeline is a function with seven
+context-managed stages. LangChain-style abstraction would obscure exactly the control flow
+that is the product's argument.</li>
+</ul>
+</section>
+
+<section id="api">
+<h2><span class="num">11</span>API &amp; interfaces</h2>
+<div class="tw"><table>
+<thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td class="m">GET /api/meta</td><td>Scenarios, personas, contract summary, causal graph, LLM availability</td></tr>
+<tr><td class="m">GET /api/freshness</td><td>Per-source lag against SLA</td></tr>
+<tr><td class="m">GET /api/analyse</td><td>The main call. <code>scenario</code>, <code>persona</code>, <code>narrator</code></td></tr>
+<tr><td class="m">GET /api/sweep</td><td>Estate triage with suppression accounting</td></tr>
+<tr><td class="m">GET /api/backtest</td><td>Historical replay scorecard</td></tr>
+<tr><td class="m">POST /api/feedback</td><td>Grade a hypothesis; updates priors</td></tr>
+<tr><td class="m">POST /api/outcome</td><td>Record a realised recovery; re-estimates a playbook</td></tr>
+<tr><td class="m">GET /api/learning</td><td>Diagnosis precision, priors, learned playbooks</td></tr>
+<tr><td class="m">POST /api/reset</td><td>Clear learned state</td></tr>
+</tbody></table></div>
+<p>Three interfaces share one engine: the web UI, the CLI (<code>--scenario</code>,
+<code>--all</code>, <code>--sweep</code>, <code>--backtest</code>, <code>--reset</code>,
+<code>--json</code>), and direct Python import of <code>pipeline.run()</code>. The UI is
+deep-linkable — every state is a URL.</p>
+</section>
+
+<section id="tests">
+<h2><span class="num">12</span>Test strategy</h2>
+<p class="lead">47 tests, 408 lines, roughly 5 seconds. These are not smoke tests. Each one
+asserts that the engine recovered something deliberately buried, or correctly refused
+something it should refuse.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Group</th><th class="m">Tests</th><th>Representative assertion</th></tr></thead>
+<tbody>
+<tr><td>S1 multi-factor</td><td class="m">6</td><td>The placebo must validate before L3 is awarded; all three planted accounts must surface; the identity must close</td></tr>
+<tr><td>S2 ambiguity</td><td class="m">3</td><td>Refuses a single cause and returns a priced separating test instead</td></tr>
+<tr><td>S3 / S4 / S6</td><td class="m">5</td><td>Declines a 19-day series; blames the pipeline not the business; confirms an external cause on a clean control</td></tr>
+<tr><td>Entitlements</td><td class="m">5</td><td>No data returned on a denied request; packet-level leak check for currency; PII redacted before prompt assembly</td></tr>
+<tr><td>Governors</td><td class="m">5</td><td>Guard rejects invented figures; graph blocks impossible mechanisms; the LLM is never the source of a number</td></tr>
+<tr><td>Mechanism ledger</td><td class="m">4</td><td>Hops are lag-aligned; the upstream hop shows the planted SLA collapse; latent nodes are named</td></tr>
+<tr><td>Evidence conflict</td><td class="m">2</td><td>Contested evidence suppresses the rung</td></tr>
+<tr><td>Estate ops</td><td class="m">5</td><td>Sweep explains its suppressions and respects entitlement; backtest records zero false positives</td></tr>
+<tr><td>Data fitness</td><td class="m">5</td><td>Gate runs first; catches the class-level load failure; stays quiet on a clean window</td></tr>
+<tr><td>Delegation</td><td class="m">5</td><td>Impact above the authority limit escalates the mode; full delegation is never assigned</td></tr>
+<tr><td>Contract &amp; telemetry</td><td class="m">2</td><td>Undeclared KPIs raise; every declared lever is reachable</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="perf">
+<h2><span class="num">13</span>Cost &amp; latency</h2>
+<div class="kv">
+  <div><div class="k">End-to-end</div><div class="v">453 ms</div><div class="s">offline, S1 analyst</div></div>
+  <div><div class="k">Dominant stage</div><div class="v">389 ms</div><div class="s">SOURCE — retrieval + DiD</div></div>
+  <div><div class="k">Non-LLM steps</div><div class="v">100%</div><div class="s">91% with narration on</div></div>
+  <div><div class="k">Cost per insight</div><div class="v">₹0.30</div><div class="s">Haiku 4.5, one call</div></div>
+</div>
+
+<div class="code">
+  <div class="cap">Stage profile, S1 / analyst / offline</div>
+<pre>fitness 18.5ms → sift 4.9ms → split 7.9ms → source 388.6ms → propagate 31.5ms
+                                          → solve 0.1ms → narrate 0.0ms
+
+method mix: SQL 28 · RULES 10 · STATISTICS 4 · RETRIEVAL 3 · DETERMINISTIC 3 · CAUSAL 2</pre>
+</div>
+
+<p>SOURCE dominates because it runs retrieval plus four cohort queries for the
+difference-in-differences. That is the right place to spend the budget, and it is bounded:
+retrieval is scoped to one segment and one window, so cost scales with the question rather
+than with the corpus.</p>
+</section>
+
+<section id="defects">
+<h2><span class="num">14</span>Defects found and fixed</h2>
+<p>Kept in the record because they are the kind of error that silently destroys an analytics
+product, and because a reviewer should know what has already been walked into.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Defect</th><th>Effect</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td><strong>Counterfactual gated behind text corroboration</strong></td><td>A persona denied CRM verbatims could never reach L3 on structured evidence that was already available</td><td>DiD now runs whenever an untreated cohort exists</td></tr>
+<tr><td><strong>Reorder metric saturated</strong></td><td>“Share of accounts that reordered within 28 days” sits at ~1.0 when accounts order weekly, so it could never move</td><td>Redefined as frequency</td></tr>
+<tr><td><strong>Then survivorship-biased</strong></td><td>Dividing by accounts active <em>in the current window</em> makes the average rise exactly when accounts go quiet</td><td>Denominator is now a stable 84-day enrolled base</td></tr>
+<tr><td><strong>Mechanism hops measured in the effect's window</strong></td><td>A 10-day-lagged cause put its own shock in the baseline; the OTD hop read −1.9pp instead of −22.4pp</td><td>Each hop measured in a lag-aligned window</td></tr>
+<tr><td><strong>Completeness checked on totals</strong></td><td>Could not see a load that drops one <em>class</em> of row — precisely the S4 failure</td><td>Partition- and outcome-class profiling</td></tr>
+<tr><td><strong>Grain mismatches raised</strong></td><td>Seven silent exceptions per sweep</td><td>Per-KPI sliceable dimensions, reported as a constraint</td></tr>
+<tr><td><strong>Competitor-promo lever unreachable</strong></td><td>A whole playbook was dead code because the control cohort was other regions</td><td>Control is now same region, other channels</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="limits">
+<h2><span class="num">15</span>Limitations</h2>
+<p>Stated plainly, because the entire thesis is about not overclaiming. These belong in the
+Q&amp;A, not hidden.</p>
+<ul>
+<li><strong>Synthetic data.</strong> Effect sizes are recovered because they were planted.</li>
+<li><strong>DiD needs a real control.</strong> Where every unit is treated, the engine
+correctly returns L1 and abstains. This is common in practice.</li>
+<li><strong>The causal graph is hand-curated.</strong> That is the point — it encodes domain
+judgement — but it is maintenance, and a wrong edge silently blocks a true cause.</li>
+<li><strong>BM25, not embeddings.</strong> Fine at this scale; needs a vector index at
+production corpus sizes.</li>
+<li><strong>Three seeded playbooks.</strong> The asset compounds only with use.</li>
+<li><strong>The numeric guard is magnitude-tolerant.</strong> It matches within 1% to survive
+rounding, so a fabricated figure landing within 1% of a real one can pass. It is a strong
+filter on material fabrication, not a proof of correctness.</li>
+<li><strong>Personalisation is rated low by the field.</strong> Olszak &amp; Bartuś found
+decision personalisation the <em>least</em>-cited benefit (4 of 20) — worth knowing, since
+persona-shaping is a large part of this design. Read as under-delivered rather than unwanted.</li>
+</ul>
+</section>
+
+<section id="ux">
+<h2><span class="num">16</span>UX: current state and open questions</h2>
+<p class="lead">The UI was built as a demonstration surface for the engine, not as a designed
+product. It works and every control is wired, but it is the least considered part of the
+build — which is where your direction comes in.</p>
+
+<h3>What exists today</h3>
+<p>A single dark page, two columns, eleven cards, 386 lines of vanilla JS. Three selectors
+drive everything — scenario, persona, narrator — and every state is a URL. Cards render in a
+fixed order regardless of what the run actually found.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Card</th><th>Column</th><th>Carries</th></tr></thead>
+<tbody>
+<tr><td>Narrative</td><td>left</td><td>The persona-shaped answer, verdict badge, narrator mode, guard status</td></tr>
+<tr><td>Movement</td><td>left</td><td>Delta, %, z, persistence, history; series chart with 1σ band and break markers</td></tr>
+<tr><td>Split</td><td>left</td><td>Identity components and top contributing segments</td></tr>
+<tr><td>Mechanism ledger</td><td>left</td><td>Per-hop chain with lag, treated, control, DiD</td></tr>
+<tr><td>Decision latency</td><td>left</td><td>Cause onset → effect visible → earliest legitimate flag</td></tr>
+<tr><td>Solve</td><td>left</td><td>Recommendations with delegation mode and reasoning</td></tr>
+<tr><td>Data fitness</td><td>right</td><td>Gate verdict, score, per-issue severity</td></tr>
+<tr><td>Entitlements</td><td>right</td><td>Row, column, domain, withheld count</td></tr>
+<tr><td>Evidence ladder</td><td>right</td><td>Hypothesis cards, rungs, all four tests, cited documents, accept/reject</td></tr>
+<tr><td>Method ledger</td><td>right</td><td>Every step with method, reason and SQL</td></tr>
+<tr><td>Telemetry</td><td>right</td><td>Latency, calls, tokens, cost</td></tr>
+</tbody></table></div>
+
+<h3>Known weaknesses I would fix regardless</h3>
+<div class="q"><div class="qt">Everything has equal visual weight<span class="tag open">open</span></div>
+  <div class="qd">Eleven cards in a fixed order. Nothing tells the eye that the verdict and the
+  recommendation matter more than the telemetry. A CFO and an analyst see the same layout with
+  different words in it, when they should probably see different <em>shapes</em>.</div></div>
+<div class="q"><div class="qt">The series chart is dense and unlabelled<span class="tag open">open</span></div>
+  <div class="qd">Weekly seasonality makes it a picket fence. The band and break markers are
+  correct but hard to read, there is no y-axis, and the window under analysis is not marked
+  against the baseline.</div></div>
+<div class="q"><div class="qt">No route into the estate view<span class="tag open">open</span></div>
+  <div class="qd">Sweep and backtest are among the strongest capabilities and exist only as CLI
+  and API. A reviewer never sees them unless told to open a terminal.</div></div>
+<div class="q"><div class="qt">Feedback is a dead end<span class="tag open">open</span></div>
+  <div class="qd">Accept and reject write to the store and print a prior weight, but nothing
+  shows the analyst what changed or lets them enter a correction. The outcome endpoint has no
+  UI at all.</div></div>
+<div class="q"><div class="qt">Abstention looks like failure<span class="tag open">open</span></div>
+  <div class="qd">S2 is one of the best things the engine does, and it currently renders as an
+  amber badge and a wall of text. The separating test — a priced, owned, dated experiment —
+  should probably be the most prominent element on that screen.</div></div>
+
+<h3>Decisions I need from you</h3>
+<div class="q"><div class="qt">Who is the primary audience of the screen?</div>
+  <div class="qd">Right now it serves the analyst best, because it shows everything. If the
+  judge-facing story is the executive, the default view should probably lead with narrative
+  and recommendation and put method behind a disclosure.</div></div>
+<div class="q"><div class="qt">One screen or a flow?</div>
+  <div class="qd">A single dense dashboard reads as a product. A guided sequence — movement →
+  evidence → action — reads better in a two-minute demo and in the video. These pull in
+  different directions.</div></div>
+<div class="q"><div class="qt">How much method should be visible by default?</div>
+  <div class="qd">The method ledger is the proof of the central claim, and it is also the most
+  intimidating thing on the page. Always visible, behind a toggle, or a separate view?</div></div>
+<div class="q"><div class="qt">Does the estate view become the landing screen?</div>
+  <div class="qd">“Here are 73 slices, 24 material, here is why the rest were suppressed” is a
+  strong opening that frames every scenario as one item from a worklist. It is also a second
+  screen to design and build.</div></div>
+<div class="q"><div class="qt">Keep the dark theme?</div>
+  <div class="qd">It reads as a technical instrument, which suits the argument. A light theme
+  would read more like enterprise BI and sit closer to the Accenture deck. Currently
+  dark-only.</div></div>
+
+<div class="note">
+  <div class="lbl">Sequencing</div>
+  <p>The video has not been re-recorded and will not be until the UX is settled, so the final
+  walkthrough reflects the finished interface rather than this one.</p>
+</div>
+</section>
+
+<section id="run">
+<h2><span class="num">17</span>Running it</h2>
+<div class="code">
+  <div class="cap">From a clean clone</div>
+<pre>./run.sh                                   # installs, builds the estate, serves :8000
+python cli.py --scenario S1 --persona cfo  # headless single run
+python cli.py --all                        # every scenario × persona
+python cli.py --sweep --backtest           # estate operations
+python cli.py --reset                      # clear learned state
+python -m pytest tests/ -q                 # 47 tests against planted ground truth
+python data/generate.py                    # rebuild the estate (seeded, reproducible)
+export ANTHROPIC_API_KEY=sk-...            # optional: enables live narration</pre>
+</div>
+<p>No API key is required. Without one the engine uses the deterministic narrator and says so.
+Two simulation modes exercise the full LLM path — including token accounting and the guard —
+and <code>simulate_bad</code> injects a fabricated figure so the guard can be seen firing.</p>
+
+<div class="tw"><table>
+<thead><tr><th>Path</th><th>Contents</th></tr></thead>
+<tbody>
+<tr><td class="m">config/</td><td>Five YAML files: contract, causal graph, entitlements, playbooks, pricing</td></tr>
+<tr><td class="m">data/</td><td>Seeded generator with planted ground truth; DuckDB estate</td></tr>
+<tr><td class="m">whylayer/</td><td>Fifteen engine modules</td></tr>
+<tr><td class="m">app/</td><td>FastAPI service and the single-page UI</td></tr>
+<tr><td class="m">tests/</td><td>47 tests scored against ground truth</td></tr>
+<tr><td class="m">docs/</td><td>Business proposal, demo video, this document</td></tr>
+</tbody></table></div>
+
+<p class="foot">Why Layer Internals · v3 · 2 September 2026<br>
+Repository: github.com/aswanthiitm/why-layer — currently private<br>
+Accenture Innovation Challenge 2026, Round 2 · BusinessIntelligence.ai</p>
+</section>
+</main>
+</div>
