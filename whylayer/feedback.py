@@ -101,6 +101,16 @@ def apply_learning(base_playbooks: List[Dict[str, Any]]) -> List[Dict[str, Any]]
     return out
 
 
+def reset() -> Dict[str, Any]:
+    """Clear all learned state. Demos and tests must start from a known point,
+    and an engine that learns needs an explicit way to forget."""
+    removed = []
+    for p in (FEEDBACK, PRIORS, PLAYBOOKS):
+        if os.path.exists(p):
+            os.remove(p); removed.append(os.path.basename(p))
+    return {"reset": True, "removed": removed}
+
+
 def stats() -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     if os.path.exists(FEEDBACK):

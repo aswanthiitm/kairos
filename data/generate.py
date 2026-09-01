@@ -50,7 +50,7 @@ SC = {
         "accounts": ["ACC-N012", "ACC-N027", "ACC-N031"],
         "account_names": ["Kestrel Foods", "Vantiq Retail", "Orbit Foods"],
         "behaviour_lag_start": date(2026, 8, 13),
-        "health_multiplier": 0.62, "cohort_multiplier": 0.90,
+        "health_multiplier": 0.72, "cohort_multiplier": 0.94,
         "tier_shift_start": date(2026, 8, 12),
         "tier_shift_pp": 0.12,
     },
@@ -60,6 +60,11 @@ SC = {
         "price_bump_category": "Staples", "price_bump_pct": 0.06,
     },
     "S3_sparse_new_category": {"category": NEW_CAT, "launch": date(2026, 8, 12), "region": "East"},
+    "S6_confirmed_competitor": {
+        "start": date(2026, 8, 12), "end": date(2026, 8, 26),
+        "region": "South", "channel": "ModernTrade", "volume_multiplier": 0.78,
+        "note": "unlike S2 this one is clean: only ModernTrade is hit, so the other "
+                "South channels are an untreated control, and the field force reported it"},
     "S4_stale_feed": {"feed_max_date": date(2026, 8, 28),
                       "dropped_late_warehouse": "WH-4",
                       "drop_from": date(2026, 8, 24)},
@@ -132,11 +137,20 @@ oid = 0
 for d in dates:
     wf, sf = weekday_factor(d), season_factor(d)
     for a in accounts.itertuples():
-        lam = a.base_units * wf * sf * account_health(a.account_id, a.warehouse_id, d) / 7.0
+        health = account_health(a.account_id, a.warehouse_id, d)
+        lam = a.base_units * wf * sf * health / 7.0
         s2 = SC["S2_ambiguous_west"]
         if a.region == s2["region"] and s2["start"] <= d <= s2["end"]:
             lam *= s2["volume_multiplier"]
-        if lam <= 0 or random.random() > min(0.95, lam / 6.0):
+        s6 = SC["S6_confirmed_competitor"]
+        if (a.region == s6["region"] and a.channel == s6["channel"]
+                and s6["start"] <= d <= s6["end"]):
+            lam *= s6["volume_multiplier"]
+        # Service failure suppresses ORDER FREQUENCY as well as order size - "they
+        # stopped reordering" is a cadence change, not just a smaller basket. Without
+        # this the reorder-frequency KPI has nothing to detect.
+        p_order = min(0.95, lam / 6.0) * health
+        if lam <= 0 or random.random() > p_order:
             continue
         n_lines = 1 if a.segment == "SMB" else random.randint(1, 3)
         for _ in range(n_lines):
@@ -199,6 +213,10 @@ market = pd.DataFrame([
     dict(event_id="MK-004", start_date=date(2026, 8, 12), end_date=date(2026, 9, 30), region="East",
          channel="Direct", event_type="own_launch", intensity=0.4,
          description="Cold-pressed oils range launch, East only"),
+    dict(event_id="MK-005", start_date=SC["S6_confirmed_competitor"]["start"],
+         end_date=SC["S6_confirmed_competitor"]["end"], region="South",
+         channel="ModernTrade", event_type="competitor_promo", intensity=0.85,
+         description="Competitor 'FreshFirst' deep-discount fortnight, South modern trade"),
 ])
 
 # ---------------------------------------------------------------- CRM text
@@ -265,6 +283,22 @@ _s2 = [(3,  date(2026, 8, 14), "call_transcript", TEMPLATES_PRICE[0],  "price_ob
        (21, date(2026, 8, 12), "call_transcript", TEMPLATES_PRICE[1],  "price_objection",     -0.35)]
 for i, ts, typ, txt, theme, sent in _s2:
     add_inter(ts, west_rows[i], typ, txt, theme, sent)
+
+# S6 evidence: deliberately STRONG - many accounts, independent roles, one theme
+TEMPLATES_S6 = [
+    "Field note: competitor 'FreshFirst' running a deep-discount fortnight across modern trade here. Their end-caps are up in every store I covered and our offtake is visibly slower.",
+    "Call summary: category buyer confirmed the competitor fortnight and said they have given them incremental shelf for the period. Expects our volumes to recover once it ends.",
+    "Ticket: store team reporting our facings intact but rate of sale down since the competitor promotion started. No service or supply issue raised.",
+    "Field note: audited four modern trade outlets. Competitor promotion visible in all four; our planogram compliance unchanged. This is share switching, not availability.",
+]
+s6 = SC["S6_confirmed_competitor"]
+_s6_pool = [a for a in accounts.itertuples()
+            if a.region == s6["region"] and a.channel == s6["channel"]]
+for a in (_s6_pool[:8] if len(_s6_pool) >= 8 else _s6_pool):
+    for _ in range(random.randint(1, 2)):
+        ts = s6["start"] + timedelta(days=random.randint(0, 13))
+        add_inter(ts, a, random.choice(["field_note", "call_transcript", "ticket"]),
+                  random.choice(TEMPLATES_S6), "competitor_activity", -0.45)
 
 # background noise across the whole estate
 for _ in range(1400):
@@ -345,6 +379,14 @@ gt = {
             "artefact": "late shipments missing from feed since 2026-08-24; feed also 2 days stale overall",
             "expected_verdict": "DATA_QUALITY",
             "expected_behaviour": "flag pipeline artefact BEFORE any business explanation"},
+        "S6_confirmed_external": {
+            "kpi": "order_volume", "region": "South", "channel": "ModernTrade",
+            "true_driver": "competitor_promo MK-005",
+            "control_definition": "South accounts on channels other than ModernTrade",
+            "expected_verdict": "CONFIRMED", "expected_max_ladder": "L3",
+            "expected_lever": "promo_response",
+            "note": "the clean counterpart to S2 - one cause, an untreated control, and "
+                    "field evidence from several independent sources"},
         "S5_entitlement": {
             "personas": ["cfo", "rsm_north", "supply_chain_lead", "data_analyst"],
             "expected_behaviour": "same movement, four narratives; withheld-evidence notice for restricted personas"},

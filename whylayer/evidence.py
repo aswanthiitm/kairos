@@ -405,8 +405,10 @@ def build_hypotheses(contract: Contract, movement, split_res: Dict[str, Any],
                 "id": "H-COMP-%s" % e["event_id"], "label": "Competitor promotion: %s" % e["description"],
                 "cause_node": "competitor_promo", "effect_node": "order_volume",
                 "exposure": {"region": e["region"], "channel": e["channel"]},
-                "control": {"region": [r for r in ["North", "South", "East", "West"]
-                                       if r != e["region"]]},
+                "control": {"region": e["region"],
+                            "channel": [ch for ch in ["Direct", "Distributor",
+                                                      "ModernTrade", "Ecommerce"]
+                                        if ch != e["channel"]]},
                 "driver_type": "external_market",
                 "query_terms": THEME_TERMS["competitor_activity"],
                 "explanatory_power": None, "event": dict(e.astype(str))})
@@ -500,20 +502,53 @@ def grade(hyp: Dict[str, Any], contract: Contract, estate: Estate, persona: Pers
     on_theme = [d for d in docs if d.get("theme") == want]
     independent = len({(d["author_role"], d["type"]) for d in on_theme})
     accounts = len({d["account_id"] for d in on_theme})
+    # Conflict: retrieved evidence that supports a DIFFERENT causal theme. A window
+    # where half the text points elsewhere is not corroboration, it is disagreement,
+    # and it must suppress the rung rather than be averaged away.
+    rival_themes = {t for t in THEME_TERMS if t not in (want, "routine")}
+    rival = [d for d in docs if d.get("theme") in rival_themes]
+    denom = len(on_theme) + len(rival)
+    conflict = (len(rival) / float(denom)) if denom else 0.0
     res["tests"]["corroboration"] = {
         "on_theme_docs": len(on_theme), "independent_source_types": independent,
-        "distinct_accounts": accounts, "theme_mix": dict(themes)}
-    if len(on_theme) >= 3 and independent >= 2 and accounts >= 2:
+        "distinct_accounts": accounts, "theme_mix": dict(themes),
+        "conflicting_docs": len(rival), "conflict_ratio": round(conflict, 3),
+        "conflicting_themes": sorted({d.get("theme") for d in rival}),
+        "verdict": ("corroborated" if len(on_theme) >= 3 and independent >= 2
+                    and accounts >= 2 and conflict < 0.4
+                    else "contested" if conflict >= 0.4
+                    else "insufficient")}
+    if res["tests"]["corroboration"]["verdict"] == "corroborated":
         res["ladder"] = "L2"
+    elif conflict >= 0.4:
+        res["tests"]["corroboration"]["note"] = (
+            "%.0f%% of the retrieved evidence in this window supports a different "
+            "explanation (%s); treated as contested, not corroborating"
+            % (100 * conflict, ", ".join(res["tests"]["corroboration"]["conflicting_themes"])))
+    tel.method("source", MethodType.RETRIEVAL, "evidence agreement vs conflict",
+               "counting supporting documents is not enough - text that points at a rival "
+               "cause is disagreement, and it suppresses the rung instead of being "
+               "averaged away",
+               detail="on_theme=%d rival=%d conflict_ratio=%.2f verdict=%s"
+                      % (len(on_theme), len(rival), conflict,
+                         res["tests"]["corroboration"]["verdict"]))
 
     # --- L3: counterfactual
-    if hyp.get("exposure") and hyp.get("control") and res["ladder"] in ("L1", "L2"):
+    # Runs whenever an untreated cohort exists. It is deliberately NOT gated on the
+    # lower rungs: a validated counterfactual is independent structured evidence and
+    # needs no text at all. Gating it behind corroboration meant a persona entitled
+    # to the numbers but not the CRM verbatims could never reach L3 on evidence that
+    # was sitting right there.
+    if hyp.get("exposure") and hyp.get("control") and res["ladder"] != "L0" or (
+            hyp.get("exposure") and hyp.get("control")):
         did = difference_in_differences(estate, persona, tel, hyp["exposure"],
                                         hyp["control"], window)
         if did:
             res["tests"]["counterfactual"] = did
             if did["parallel_trends_ok"] and did["p_value"] < 0.05:
                 res["ladder"] = "L3"
+            elif did["parallel_trends_ok"] and did["p_value"] < 0.20 and res["ladder"] == "L0":
+                res["ladder"] = "L1"          # directional but not decisive
             else:
                 res["tests"]["counterfactual"]["note"] = (
                     "design did not validate - parallel trends failed or the effect is "

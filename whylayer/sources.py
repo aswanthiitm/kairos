@@ -89,25 +89,45 @@ class Estate(object):
         return df
 
     def _reorder_rate(self, persona: Persona, filters, tel) -> pd.DataFrame:
+        """Distinct orders per enrolled account over a trailing 28 days, weekly.
+
+        Two definitional traps this avoids, both of which produce a metric that
+        cannot detect the thing it exists to detect:
+
+        1. "Share of accounts that reordered within 28 days" saturates at ~1.0 when
+           accounts order weekly, so it never moves.
+        2. Dividing by accounts active *in the current window* is survivorship-biased:
+           an account that goes quiet leaves the denominator, which makes the average
+           go UP exactly when behaviour is deteriorating. The denominator is therefore
+           the accounts enrolled over a trailing 84 days, which is stable.
+        """
         where, _ = persona.sql_where(filters)
         q = """
-        WITH o AS (SELECT account_id, order_date FROM orders %s GROUP BY 1,2),
-        w AS (SELECT DISTINCT date_trunc('week', order_date) AS wk FROM o)
-        SELECT w.wk AS d,
-               AVG(CASE WHEN x.recent > 0 THEN 1.0 ELSE 0.0 END) AS v
-        FROM w
-        JOIN (SELECT a.account_id, w2.wk,
-                     SUM(CASE WHEN o2.order_date BETWEEN w2.wk - INTERVAL 28 DAY AND w2.wk
-                              THEN 1 ELSE 0 END) AS recent
-              FROM (SELECT DISTINCT account_id FROM o) a
-              CROSS JOIN w w2
-              LEFT JOIN o o2 ON o2.account_id = a.account_id
-              GROUP BY 1,2) x ON x.wk = w.wk
-        GROUP BY 1 ORDER BY 1""" % where
-        df = self.sql(q, tel, "sift", "28-day reorder rate (weekly grain)")
+        WITH o AS (
+            SELECT account_id, order_date, COUNT(DISTINCT order_id) AS n
+            FROM orders %s GROUP BY 1,2),
+        wk AS (SELECT DISTINCT date_trunc('week', order_date)::DATE AS w FROM o)
+        SELECT wk.w AS d,
+               CAST(SUM(x.orders) AS DOUBLE) / NULLIF(SUM(x.enrolled), 0) AS v
+        FROM wk
+        JOIN (
+            SELECT a.account_id, wk2.w,
+                   SUM(CASE WHEN o.order_date > wk2.w - INTERVAL 28 DAY
+                             AND o.order_date <= wk2.w THEN o.n ELSE 0 END) AS orders,
+                   CASE WHEN SUM(CASE WHEN o.order_date > wk2.w - INTERVAL 84 DAY
+                                       AND o.order_date <= wk2.w THEN o.n ELSE 0 END) > 0
+                        THEN 1 ELSE 0 END AS enrolled
+            FROM (SELECT DISTINCT account_id FROM o) a
+            CROSS JOIN wk wk2
+            LEFT JOIN o ON o.account_id = a.account_id
+            GROUP BY 1,2
+        ) x ON x.w = wk.w
+        GROUP BY 1 ORDER BY 1""" % (where or "")
+        df = self.sql(q, tel, "sift", "28-day reorder frequency (weekly grain)")
+        df = df[["d", "v"]]
         df.columns = ["d", "v"]
         df["d"] = pd.to_datetime(df["d"])
-        return df
+        return df.dropna()
 
     # ------------------------------------------------------------ slice data
     def orders_slice(self, persona: Persona, start: date, end: date,

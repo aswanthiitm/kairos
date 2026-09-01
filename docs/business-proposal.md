@@ -61,6 +61,31 @@ and returns narratives into the tools people already open.
 | **SOLVE** | What do we do? | Playbook memory matched on pattern signature, rescaled to value at risk | Emit an action whose lever isn't in the contract |
 | **NARRATE** | How do we say it? | Persona-shaped generation behind a numeric guard | Publish a number absent from the evidence packet |
 
+### Three capabilities the adjacent products do not have
+
+Tellius, ThoughtSpot Spotter, Anodot and the platform copilots all do automated driver
+decomposition and generated narratives. The differentiation is not in doing those better.
+
+**The mechanism ledger.** Every hop of the causal chain is measured against the same
+untreated cohort, each in its own lag-aligned window — on-time delivery −22.4pp →
+reorder frequency → order volume −14.9pp → net revenue −17.8pp. Because a cause acts
+with a lag, measuring it in the effect's window buries the shock in the baseline; lag
+alignment is what turns an apparent −1.9pp into the real −22.4pp. The output tells a
+leader *where in the chain the loss is created*, which is the difference between
+"the warehouse did it" and "intervene at dispatch, not at pricing".
+
+**Evidence conflict.** Corroboration counts documents that agree; this also counts
+documents that point elsewhere. In the ambiguous scenario, 83% of retrieved evidence
+supports a rival cause, so the hypothesis is marked *contested* and cannot reach L2 —
+the mechanism by which contradictory evidence produces abstention rather than a
+confident average.
+
+**Suppression accounting and a self-reported false-alarm rate.** An estate sweep scans
+73 KPI-slices and reports not only the 24 that survived but the 24 it suppressed and
+under which gate. A historical replay over 20 rolling windows fired once, on the real
+event — precision 1.0, and recall 0.25 printed alongside it. Alert fatigue and
+trustworthiness become measured properties rather than claims.
+
 ### The two governors
 
 **The Evidence Ladder** — Bradford Hill's viewpoints (1965) operationalised on Pearl's

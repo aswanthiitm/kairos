@@ -172,5 +172,135 @@ def test_telemetry_reports_latency_and_cost():
     r = go("S1")
     t = r["telemetry"]
     assert t["total_ms"] > 0
-    assert [s["stage"] for s in t["stages"]] == ["sift", "split", "source", "solve", "narrate"]
+    assert [s["stage"] for s in t["stages"]] == ["sift", "split", "source", "propagate", "solve", "narrate"]
     assert "usd" in t["llm"] and "inr" in t["llm"]
+
+
+# ------------------------------------------------- mechanism ledger (propagation)
+def test_mechanism_ledger_measures_every_instrumented_hop():
+    r = go("S1")
+    ml = r["mechanism_ledger"]
+    assert ml is not None
+    kpis = [h["kpi"] for h in ml["hops"] if h.get("measured")]
+    assert {"otd_pct", "order_volume", "net_revenue"} <= set(kpis)
+    assert ml["intervention_point"] == "otd_pct", "the chain must originate at the SLA hop"
+
+
+def test_mechanism_hops_are_lag_aligned():
+    r = go("S1")
+    ml = r["mechanism_ledger"]
+    otd = next(h for h in ml["hops"] if h.get("kpi") == "otd_pct")
+    rev = next(h for h in ml["hops"] if h.get("kpi") == "net_revenue")
+    assert otd["lag_days_to_effect"] > rev["lag_days_to_effect"], \
+        "an upstream cause must be measured earlier than its effect"
+    assert otd["measured_window"]["start"] < rev["measured_window"]["start"]
+
+
+def test_upstream_hop_shows_the_planted_sla_collapse():
+    r = go("S1")
+    otd = next(h for h in r["mechanism_ledger"]["hops"] if h.get("kpi") == "otd_pct")
+    assert otd["did_pct"] < -0.15, "the planted OTD shock was ~25pp; lag alignment must find it"
+
+
+def test_latent_nodes_are_named_not_hidden():
+    r = go("S1")
+    latent = [h for h in r["mechanism_ledger"]["hops"] if not h.get("measured")]
+    assert latent and all(h.get("note") for h in latent)
+
+
+# ------------------------------------------------------- S6 confirmed external cause
+def test_s6_confirms_an_external_cause_with_a_clean_control():
+    r = go("S6")
+    assert r["verdict"]["status"] == "CONFIRMED"
+    comp = next(h for h in r["hypotheses"] if h["hyp"]["id"].startswith("H-COMP"))
+    assert comp["grade"]["ladder"] == "L3"
+    assert comp["grade"]["tests"]["counterfactual"]["parallel_trends_ok"]
+
+
+def test_s6_reaches_the_promo_response_lever():
+    r = go("S6")
+    assert "promo_response" in {x["lever"] for x in r["recommendations"]}
+
+
+def test_every_declared_lever_is_reachable():
+    used = set()
+    for sc in ["S1", "S2", "S3", "S4", "S6"]:
+        for p in ["cfo", "data_analyst"]:
+            for x in run(sc, p, C, E, force_offline=True)["recommendations"]:
+                used.add(x["lever"])
+    assert set(C.levers()) <= used, "unreachable levers: %s" % (set(C.levers()) - used)
+
+
+# ------------------------------------------------------------ evidence conflict
+def test_conflicting_evidence_suppresses_corroboration():
+    r = go("S2")
+    price = next(h for h in r["hypotheses"] if h["hyp"]["id"] == "H-PRICE")
+    co = price["grade"]["tests"]["corroboration"]
+    assert co["conflict_ratio"] > 0.4 and co["verdict"] == "contested"
+
+
+def test_clean_evidence_is_marked_corroborated():
+    r = go("S1")
+    sla = next(h for h in r["hypotheses"] if h["hyp"]["id"] == "H-SLA")
+    assert sla["grade"]["tests"]["corroboration"]["verdict"] == "corroborated"
+
+
+# --------------------------------------------------------------- estate operations
+def test_sweep_reports_what_it_suppressed():
+    from whylayer.triage import sweep
+    from whylayer.telemetry import Telemetry
+    from datetime import date
+    s = sweep(C, E, P["data_analyst"], Telemetry(), (date(2026, 8, 17), date(2026, 8, 30)))
+    assert s["scanned"] > 40
+    assert s["material"] < s["scanned"], "a sweep that flags everything has no gate"
+    assert s["suppression_reasons"], "suppression must be explained, not just counted"
+
+
+def test_sweep_respects_row_entitlement():
+    from whylayer.triage import sweep
+    from whylayer.telemetry import Telemetry
+    from datetime import date
+    w = (date(2026, 8, 17), date(2026, 8, 30))
+    full = sweep(C, E, P["data_analyst"], Telemetry(), w)
+    limited = sweep(C, E, P["rsm_north"], Telemetry(), w)
+    assert limited["scanned"] < full["scanned"]
+
+
+def test_backtest_does_not_cry_wolf():
+    from whylayer.triage import backtest
+    from whylayer.telemetry import Telemetry
+    from datetime import date
+    ev = [(date(2026, 8, 3), date(2026, 8, 30), "WH-3 SLA")]
+    b = backtest(C, E, P["data_analyst"], Telemetry(), "net_revenue",
+                 {"region": "North"}, known_events=ev)
+    assert b["windows_tested"] >= 15
+    assert b["false_positives"] == 0, "fired on a quiet window"
+
+
+def test_reset_clears_learned_state():
+    from whylayer import feedback as FB
+    FB.record("t", "cfo", "net_revenue", "H-SLA", "reject")
+    assert FB.stats()["total_graded"] > 0
+    FB.reset()
+    assert FB.stats()["total_graded"] == 0
+
+
+# ---------------------------------------------------------- corrected KPI definition
+def test_reorder_frequency_is_not_saturated():
+    from whylayer.telemetry import Telemetry
+    s = E.kpi_series("reorder_rate_28d", P["data_analyst"], None, Telemetry())
+    assert s["v"].std() > 0.01, "a metric that never moves cannot be a driver"
+    assert s["v"].max() > 1.5, "should be a frequency, not a saturated 0-1 ratio"
+
+
+def test_grain_limits_are_reported_not_thrown():
+    from whylayer.triage import sweep
+    from whylayer.telemetry import Telemetry
+    from datetime import date
+    s = sweep(C, E, P["data_analyst"], Telemetry(), (date(2026, 8, 17), date(2026, 8, 30)))
+    assert s["errors"] == 0, "grain mismatches must be handled, not raised"
+    blocked = {(n["kpi"], n["dimension"]) for n in s["not_sliceable"]}
+    assert ("otd_pct", "segment") in blocked, \
+        "a shipment-grain KPI cannot be cut by customer segment, and must say so"
+    assert C.sliceable("net_revenue", "segment")
+    assert not C.sliceable("otd_pct", "channel")

@@ -68,6 +68,7 @@ kpis:
     additive: true
     decomposition: "net_revenue = order_volume * asp"     # exact identity -> mix/rate algebra
     drivers: [order_volume, asp, tier_mix, channel_mix]
+    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
     materiality:
       min_abs_inr: 2500000        # Rs 25 L - below this we do not wake anyone up
       min_pct_of_plan: 0.015      # 1.5% of period plan
@@ -84,6 +85,7 @@ kpis:
     sql: "SELECT order_date AS d, SUM(units) AS v FROM orders {where} GROUP BY 1"
     additive: true
     drivers: [reorder_rate_28d, active_accounts, market_event]
+    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.02, min_persistence_days: 3}
     thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
     access: {row_filter: region, column_sensitivity: internal}
@@ -96,6 +98,7 @@ kpis:
     sql: "SELECT order_date AS d, SUM(net_revenue)/NULLIF(SUM(units),0) AS v FROM orders {where} GROUP BY 1"
     additive: false               # ratio metric - never sum, always re-aggregate
     drivers: [tier_mix, discount_pct, category_mix]
+    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.01, min_persistence_days: 5}
     thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
     access: {row_filter: region, column_sensitivity: financial}
@@ -108,18 +111,21 @@ kpis:
     sql: "SELECT dispatch_date AS d, AVG(CASE WHEN on_time THEN 1.0 ELSE 0.0 END) AS v FROM dispatch {where} GROUP BY 1"
     additive: false
     drivers: [warehouse, delay_reason]
+    sliceable_by: [region, warehouse_id]   # dimensions this KPI's source grain can resolve
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.03, min_persistence_days: 2}
     thresholds: {warn_sigma: 2.0, alert_sigma: 2.5}
     access: {row_filter: region, column_sensitivity: internal}
 
   reorder_rate_28d:
-    label: "28-day Reorder Rate"
-    unit: pct
+    label: "28-day Reorder Frequency"
+    unit: orders_per_account
     grain: weekly
     source: orders
+    trailing_days: 28          # metric is a trailing aggregate - see coverage note below
     sql: "__derived__"            # computed in Python: window function over account order history
     additive: false
     drivers: [otd_pct, asp, service_tickets]
+    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.02, min_persistence_days: 7}
     thresholds: {warn_sigma: 2.0, alert_sigma: 2.5}
     access: {row_filter: region, column_sensitivity: internal}

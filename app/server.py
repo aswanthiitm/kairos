@@ -14,6 +14,9 @@ from whylayer.sources import Estate
 from whylayer.security import load_personas
 from whylayer.pipeline import run, SCENARIOS
 from whylayer import feedback as FB
+from whylayer.triage import sweep as do_sweep, backtest as do_backtest
+from whylayer.telemetry import Telemetry
+from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title="The Why Layer", version="1.0.0")
@@ -96,6 +99,38 @@ def post_feedback(f: Feedback) -> Any:
 def post_outcome(o: Outcome) -> Any:
     return FB.record_outcome(o.playbook_id, o.realised_recovery_pct,
                              CONTRACT.playbooks["playbooks"])
+
+
+@app.get("/api/sweep")
+def sweep(persona: str = "data_analyst", start: str = "2026-08-17",
+          end: str = "2026-08-30") -> Any:
+    if persona not in PERSONAS:
+        raise HTTPException(404, "unknown persona")
+    tel = Telemetry()
+    r = do_sweep(CONTRACT, ESTATE, PERSONAS[persona], tel,
+                 (date.fromisoformat(start), date.fromisoformat(end)))
+    r["telemetry"] = tel.summary()
+    return JSONResponse(json.loads(json.dumps(r, default=str)))
+
+
+@app.get("/api/backtest")
+def backtest(persona: str = "data_analyst", kpi: str = "net_revenue",
+             region: Optional[str] = "North") -> Any:
+    if persona not in PERSONAS:
+        raise HTTPException(404, "unknown persona")
+    tel = Telemetry()
+    events = [(date(2026, 8, 3), date(2026, 8, 30), "WH-3 dispatch SLA collapse"),
+              (date(2026, 8, 10), date(2026, 8, 24), "West competitor promo + price rise"),
+              (date(2026, 8, 12), date(2026, 8, 26), "South modern-trade competitor promo")]
+    r = do_backtest(CONTRACT, ESTATE, PERSONAS[persona], tel, kpi,
+                    {"region": region} if region else None, known_events=events)
+    r["telemetry"] = tel.summary()
+    return JSONResponse(json.loads(json.dumps(r, default=str)))
+
+
+@app.post("/api/reset")
+def reset() -> Any:
+    return FB.reset()
 
 
 @app.get("/api/learning")

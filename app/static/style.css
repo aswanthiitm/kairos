@@ -127,3 +127,5 @@ tr:last-child td{border-bottom:0}
 .fbmsg{font-family:var(--mono);font-size:10px;color:var(--good)}
 .foot{border-top:1px solid var(--line);padding:12px 22px;display:flex;justify-content:space-between;
   font-family:var(--mono);font-size:10px;color:var(--ink3);flex-wrap:wrap;gap:10px}
+
+.unmeas td{color:var(--ink3);font-style:italic}

@@ -14,6 +14,7 @@ from .split import split as do_split
 from . import evidence as EV
 from .solve import recommend
 from .narrate import evidence_packet, narrate
+from .propagation import mechanism_ledger
 from . import feedback as FB
 
 SCENARIOS: Dict[str, Dict[str, Any]] = {
@@ -29,6 +30,11 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
            "window": ("2026-08-20", "2026-08-30"),
            "filters": {"category": "ColdPressedOils"}, "measure": "net_revenue",
            "note": "19 days of history - too short to fit seasonality"},
+    "S6": {"name": "South modern-trade volume (external cause)", "kpi": "order_volume",
+           "window": ("2026-08-12", "2026-08-26"),
+           "filters": {"region": "South", "channel": "ModernTrade"}, "measure": "units",
+           "note": "the clean counterpart to S2: one cause, an untreated control on the "
+                   "other South channels, and corroborating field reports"},
     "S4": {"name": "WH-4 on-time delivery 'improvement'", "kpi": "otd_pct",
            "window": ("2026-08-24", "2026-08-28"), "filters": {"warehouse_id": "WH-4"},
            "measure": "net_revenue",
@@ -80,7 +86,8 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
                                      ", ".join(conflict["entitled_to"]), conflict["requested"]),
                         "leader_ids": []},
             "movement": None, "split": None, "hypotheses": [], "recommendations": [],
-            "separating_test": None, "withheld_evidence": [], "advisories": [],
+            "separating_test": None, "mechanism_ledger": None,
+            "withheld_evidence": [], "advisories": [],
             "narrative": {"text": "Access denied. %s may only analyse %s = %s. This request "
                                   "targeted %s = %s and was refused before any query ran."
                                   % (p.label, conflict["column"],
@@ -115,6 +122,12 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
         else:
             vd = EV.verdict(graded)
         sep = EV.separating_test(vd)
+
+    with tel.stage("propagate"):
+        ledger = None
+        if vd.get("leaders"):
+            top = vd["leaders"][0]
+            ledger = mechanism_ledger(c, e, p, tel, top["hyp"], top["grade"], (ws, we))
 
     with tel.stage("solve"):
         pbs = FB.apply_learning(c.playbooks["playbooks"])
@@ -164,6 +177,7 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
         "verdict": {"status": vd["status"], "reason": vd["reason"],
                     "leader_ids": [g["hyp"]["id"] for g in vd.get("leaders", [])]},
         "separating_test": sep,
+        "mechanism_ledger": ledger,
         "recommendations": recs,
         "narrative": nar,
         "evidence_packet": packet,

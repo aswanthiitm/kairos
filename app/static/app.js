@@ -54,6 +54,7 @@ function render(d){
     ${cardNarrative(d, v)}
     ${cardMovement(d, m, restricted)}
     ${cardSplit(d, restricted)}
+    ${cardMechanism(d, restricted)}
     ${cardRecs(d)}
   </div>
   <div class="col">
@@ -177,6 +178,29 @@ function cardSplit(d, restricted){
   </div>`;
 }
 
+function cardMechanism(d, restricted){
+  const ml = d.mechanism_ledger; if(!ml) return '';
+  const rows = ml.hops.map(h=>{
+    if(!h.measured) return `<tr class="unmeas"><td class="m">—</td><td>${esc(h.label)}</td>
+      <td colspan="4" style="color:var(--ink3)">${esc(h.note||'')}</td></tr>`;
+    const did = h.did_pct==null ? '—' : (100*h.did_pct).toFixed(1)+'%';
+    return `<tr><td class="m">${h.lag_days_to_effect}d</td>
+      <td><b>${esc(h.kpi_label)}</b><br><span style="color:var(--ink3);font-size:10.5px">${esc(h.label)}</span></td>
+      <td class="m">${(100*h.treated.pct_change).toFixed(1)}%</td>
+      <td class="m">${h.control?(100*h.control.pct_change).toFixed(1)+'%':'—'}</td>
+      <td class="m"><b>${did}</b></td>
+      <td style="font-size:11px;color:var(--ink3)">${esc(h.coverage_note||h.reading||'')}</td></tr>`;
+  }).join('');
+  return `<div class="card">
+    <div class="chead"><span class="ctitle">Mechanism ledger — where the loss is created</span>
+      <span class="pill">intervene at <b>${esc(ml.intervention_point)}</b></span></div>
+    <div style="font-size:13.5px;color:var(--acc2);margin-bottom:10px">${esc(ml.chain_summary)}</div>
+    <table><thead><tr><th>lag</th><th>hop</th><th>treated</th><th>control</th><th>DiD</th><th>note</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    <div style="margin-top:9px;font-size:11.5px;color:var(--ink3)">${esc(ml.intervention_note)}</div>
+  </div>`;
+}
+
 function cardHypotheses(d){
   const lead=d.verdict.leader_ids||[];
   const items=(d.hypotheses||[]).map(h=>{
@@ -196,8 +220,10 @@ function cardHypotheses(d){
            gap ${x.gap_days}d vs declared ${x.declared_lag_days}d — <b>${x.consistent?'consistent':'inconsistent'}</b>`)}
         ${test('dose_response','dose–response',x=>`Spearman ρ=${x.spearman_rho.toFixed(2)}, p=${x.p_value.toFixed(4)}
            · ${x.buckets.map(b=>`${esc(b.exposure)} ${(100*b.mean_change_pct).toFixed(0)}%`).join(' · ')}`)}
-        ${test('corroboration','corroboration',x=>`${x.on_theme_docs} on-theme documents from
-           ${x.independent_source_types} independent source types across ${x.distinct_accounts} accounts`)}
+        ${test('corroboration','corroboration',x=>`${x.on_theme_docs} on-theme from
+           ${x.independent_source_types} independent source types across ${x.distinct_accounts} accounts
+           &middot; ${x.conflicting_docs} conflicting (${(100*x.conflict_ratio).toFixed(0)}%)
+           &rarr; <b>${esc(x.verdict)}</b>${x.note?`<br><span style="color:var(--warn)">${esc(x.note)}</span>`:''}`)}
         ${test('counterfactual','counterfactual',x=>`DiD ${(100*x.did_pp).toFixed(1)}% (SE ${(100*x.std_error_pp).toFixed(1)}pp,
            p=${x.p_value.toFixed(4)}) · placebo ${(100*x.placebo_pp).toFixed(1)}pp ·
            parallel trends <b>${x.parallel_trends_ok?'hold':'fail'}</b>`)}

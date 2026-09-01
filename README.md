@@ -80,6 +80,66 @@ whose entitlement denies them the CRM verbatims that would have produced L2.
 | **S3** | New category, 19 days | Deliberately too short to fit seasonality | **INSUFFICIENT_HISTORY** — widens the band with a peer prior, refuses a cause |
 | **S4** | WH-4 on-time delivery "improves" | Late-shipment rows silently stopped loading | **DATA_QUALITY** — flags the partial load *before* any business story |
 | **S5** | RSM-North asks about West | — | **ENTITLEMENT_DENIED** at pre-flight; no rows, no narrative |
+| **S6** | South modern-trade volume −18.9% | A competitor promotion hitting one channel only, so the other South channels are an untreated control, plus field reports | **CONFIRMED · L3** — the clean counterpart to S2; DiD −20.4pp, 11 corroborating documents, fires the counter-promotion lever |
+
+---
+
+## What none of the adjacent products do
+
+Tellius, ThoughtSpot SpotIQ/Spotter, Anodot and the BI copilots all do automated
+driver decomposition and generated narratives well. Four things here are genuinely
+not in that set:
+
+**1. A quantified mechanism ledger across KPIs.** Everyone stops at "the SLA failure
+explains the revenue drop". This measures every hop of the declared chain against the
+same untreated cohort, **each in its own lag-aligned window**:
+
+```
+On-Time Delivery %      -22.4pp   measured 08-07..08-20  (10-day declared lag)
+  -> [Account service confidence — latent, not instrumented]
+  -> 28-day Reorder Frequency  -0.7pp   only 41% of its trailing window is post-onset
+  -> Order Volume        -14.9pp
+  -> Net Revenue         -17.8pp
+```
+Because the cause acts with a lag, measuring it in the effect's window puts the shock
+in the baseline and the hop reads as nothing. Aligning by the graph's declared lag is
+what turns −1.9pp into the real −22.4pp. The ledger also names latent nodes rather than
+skipping them, and flags when a trailing metric has not yet absorbed the effect.
+
+**2. Evidence conflict, not just evidence count.** Corroboration counts documents that
+agree. This also counts documents that point somewhere else, and a contested window
+**cannot reach L2**:
+
+| Scenario | on-theme | conflicting | ratio | verdict |
+|---|---|---|---|---|
+| S1 dispatch SLA | 12 | 0 | 0.00 | corroborated → L3 |
+| S2 price rise | 2 | 10 | **0.83** | **contested — rung suppressed** |
+| S6 competitor promo | 11 | 0 | 0.00 | corroborated → L3 |
+
+**3. Suppression accounting.** Alert fatigue is treated as a measurable property:
+
+```
+python cli.py --sweep
+  scanned 73 slices -> 24 material, 9 data-quality, 16 insufficient history, 24 suppressed
+  suppressed because:
+    persistence     20   did not persist for the required number of days
+    statistical      8   inside the expected band once seasonality is removed
+    pct_of_plan      4   movement is too small a share of the period plan
+    abs_inr          1   below the rupee materiality floor in the contract
+  grain-blocked: otd_pct x segment - measured at shipment grain, which does not carry 'segment'
+```
+The sweep also shrinks with entitlement: the analyst scans 73 slices, the North RSM 58.
+
+**4. A false-alarm rate the engine reports about itself.**
+
+```
+python cli.py --backtest
+  20 windows, 1 alert (rate 0.05), precision 1.0, recall 0.25
+```
+Twenty rolling windows across four quiet months, one alert, and it was the real event.
+Recall is 0.25 and stays in the output: the SLA event spans four windows and only became
+material in the last one. An engine that cannot report its own false-alarm rate is asking
+to be trusted on faith.
 
 ---
 
@@ -103,6 +163,7 @@ whose entitlement denies them the CRM verbatims that would have produced L2.
 | Stage | File | What it refuses to do |
 |---|---|---|
 | SIFT | `whylayer/sift.py` | wake anyone for a statistically real but immaterial move |
+| PROPAGATE | `whylayer/propagation.py` | measure an upstream hop in its effect's window |
 | SPLIT | `whylayer/split.py` | leave a residual — the identity closes to <₹1 |
 | SOURCE | `whylayer/evidence.py` | award L3 when the placebo test fails |
 | SOLVE | `whylayer/solve.py` | emit an action whose lever isn't in the contract |
@@ -150,6 +211,9 @@ and the engine raises an advisory rather than hiding it.
 python cli.py --scenario S1 --persona cfo  # headless
 python cli.py --all                        # every scenario x persona
 python -m pytest tests/ -q                 # 21 tests against planted ground truth
+python cli.py --sweep                      # estate triage with suppression accounting
+python cli.py --backtest                   # false-alarm scorecard over history
+python cli.py --reset                      # clear learned state (demos start clean)
 python data/generate.py                    # rebuild the estate (seeded, reproducible)
 export ANTHROPIC_API_KEY=sk-...            # optional: enables LLM narration + guard
 ```
@@ -206,6 +270,13 @@ Stated plainly, because the whole thesis is about not overclaiming.
 - **BM25, not embeddings.** Fine at this scale, would need a vector index at production
   corpus sizes.
 - **The playbook library is seeded with three entries.** Its value compounds only with use.
+- **Two KPI definitions were wrong and had to be fixed.** `reorder_rate_28d` was first
+  written as "share of accounts that reordered within 28 days", which saturates at ~1.0
+  when accounts order weekly and can never move. The replacement divided by accounts
+  active *in the current window*, which is survivorship-biased — an account going quiet
+  leaves the denominator and the average goes **up** exactly when behaviour deteriorates.
+  Both are recorded in `sources.py` because they are the kind of error that silently
+  destroys a driver metric.
 - **Learning is shallow.** Priors re-weight hypothesis ranking and outcomes re-estimate
   effect sizes; nothing is fine-tuned.
 - **The numeric guard is magnitude-tolerant.** It matches within 1% to survive legitimate

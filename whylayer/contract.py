@@ -43,6 +43,16 @@ class Contract(object):
     def source_of(self, kpi: str) -> Dict[str, Any]:
         return self.kpi["sources"][self.get_kpi(kpi)["source"]]
 
+    def sliceable(self, kpi: str, dim: str) -> bool:
+        """Can this KPI be cut by this dimension at its source grain?
+        on-time delivery is measured on shipments, which carry a warehouse and a
+        region but know nothing about customer segment - asking for that slice is a
+        grain error, not a data error, and it deserves a real answer."""
+        dims = self.get_kpi(kpi).get("sliceable_by")
+        if not dims:
+            return True
+        return dim in dims or dim == "account_id"
+
     def levers(self) -> Dict[str, Any]:
         return self.kpi["levers"]
 
