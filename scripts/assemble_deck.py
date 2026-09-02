@@ -50,16 +50,76 @@ for e in ids:
 for e in [cover, instr, team, c1, c2] + rest + [video, thanks]:
     lst.append(e)
 
-TEAM = {"College:": "College: Indian Institute of Technology Madras",
-        "Stream:": "Stream: Civil Engineering (B.Tech)",
-        "Year of graduation:": "Year of graduation: 2028"}
-for shp in prs.slides[2].shapes:
+# ── team details: a single, individual entry ────────────────────────────────
+# The template ships three member blocks. An individual entrant keeps one and the
+# other two are removed entirely — leaving empty frames behind reads as an
+# unfinished slide, not as a solo entry.
+team = prs.slides[2]
+by_name = {}
+for shp in team.shapes:
+    by_name.setdefault(shp.name, []).append(shp)
+
+def kill(shape):
+    shape._element.getparent().remove(shape._element)
+
+# member 2 (lower-left) and member 3 (right), plus the divider that separated the columns
+for shp in list(team.shapes):
+    L, T = shp.left / 914400.0, shp.top / 914400.0
+    drop = (
+        L > 6.6                                   # everything in the right-hand column
+        or (T > 4.4 and shp.shape_type != 1 and "Rectangle 2" not in shp.name)  # lower-left block
+        or (shp.name == "Rectangle 29")           # the second "Photo" frame
+        or (shp.name == "Straight Connector 5")   # the column divider
+    )
+    if shp.name in ("Title 17", "Slide Number Placeholder 9", "Rectangle 2"):
+        drop = False
+    if drop:
+        kill(shp)
+
+FIELDS = {
+    "Name (Team Leader)": "Aswanth",
+    "College:": "College: Indian Institute of Technology Madras",
+    "Stream:": "Stream: Civil Engineering (B.Tech)",
+    "Year of graduation:": "Year of graduation: 2028",
+}
+for shp in team.shapes:
     if not shp.has_text_frame:
         continue
     for para in shp.text_frame.paragraphs:
         for run in para.runs:
-            if run.text.strip() in TEAM:
-                run.text = TEAM[run.text.strip()]
+            key = run.text.strip()
+            if key in FIELDS:
+                run.text = FIELDS[key]
+
+for shp in team.shapes:
+    if shp.has_table:
+        c = shp.table.cell(0, 0)
+        for para in c.text_frame.paragraphs:
+            for run in para.runs:
+                if run.text.strip() == "TEAM NAME:":
+                    run.text = "TEAM NAME:  Aswanth  (individual participant)"
+
+# the photo, if one has been saved next to the deck
+PHOTO = os.path.join(ROOT, "submission", "photo.jpg")
+if not os.path.exists(PHOTO):
+    for alt in ("photo.jpeg", "photo.png"):
+        cand = os.path.join(ROOT, "submission", alt)
+        if os.path.exists(cand):
+            PHOTO = cand
+            break
+if os.path.exists(PHOTO):
+    frame = next((sh for sh in team.shapes if sh.shape_type == 13), None)
+    if frame is not None:
+        L, T, W, H = frame.left, frame.top, frame.width, frame.height
+        kill(frame)
+        from PIL import Image
+        iw, ih = Image.open(PHOTO).size
+        scale = min(W / iw, H / ih)              # fit inside, keep the aspect ratio
+        w, h = int(iw * scale), int(ih * scale)
+        team.shapes.add_picture(PHOTO, L + (W - w) // 2, T + (H - h) // 2, width=w, height=h)
+        print("photo inserted from", os.path.basename(PHOTO))
+else:
+    print("NO PHOTO FOUND — save it as submission/photo.jpg and re-run to insert it")
 
 cp = prs.core_properties
 cp.title = "KAIRÓS — Detailed Business Proposal"
@@ -102,6 +162,40 @@ with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as zout:
         else:
             zout.writestr(n, zin.read(n))
 zin.close(); os.remove(TMP)
+
+# ── font remap ──────────────────────────────────────────────────────────────
+# The template is set in Graphik, Accenture's brand face. It is not installed on
+# a typical machine, so PowerPoint substitutes something unpredictable and warns
+# the reader that fonts are missing. The template's own instruction slide says to
+# use standard Arial, so we map it explicitly: a known substitution beats an
+# unknown one, and the warning goes away. Our content slides are images and are
+# unaffected either way.
+# Graphik is the brand face; the rest are display faces the template carries on
+# layouts we do not use. All of them would warn. The CJK/Indic entries below are
+# left alone - they are the standard Office script fallbacks and warn about
+# nothing.
+GRAPHIK = ("Graphik Semibold", "Graphik Regular", "Graphik Black",
+           "Graphik Extralight", "Graphik Medium", "Graphik-Semibold", "Graphik",
+           "GT Sectra Fine Rg", "Gotham Medium", "Roboto Light", "System Font",
+           "Aptos Display", "Aptos", "Helvetica Neue Medium", "Helvetica Neue Light",
+           "Helvetica Neue", "Calibri Light")
+import zipfile as _zf
+_tmp = OUT + ".fонts"
+_zin = _zf.ZipFile(OUT)
+with _zf.ZipFile(_tmp, "w", _zf.ZIP_DEFLATED) as _zout:
+    for _n in _zin.namelist():
+        _d = _zin.read(_n)
+        if _n.endswith(".xml") and (_n.startswith("ppt/slides/")
+                                    or _n.startswith("ppt/slideLayouts/")
+                                    or _n.startswith("ppt/slideMasters/")
+                                    or _n.startswith("ppt/theme/")):
+            _t = _d.decode("utf8")
+            for _g in GRAPHIK:
+                _t = _t.replace('typeface="%s"' % _g, 'typeface="Arial"')
+            _d = _t.encode("utf8")
+        _zout.writestr(_n, _d)
+_zin.close()
+os.replace(_tmp, OUT)
 
 check = Presentation(OUT)
 z = zipfile.ZipFile(OUT)
