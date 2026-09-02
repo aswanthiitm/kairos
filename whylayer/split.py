@@ -26,7 +26,12 @@ from .security import Persona
 from .sources import Estate
 from .telemetry import Telemetry, MethodType
 
-DIMS = ["region", "segment", "channel", "category", "tier", "warehouse_id", "account_name"]
+# Ordered coarse to fine. `city` sits directly under `region` because the contract
+# declares that hierarchy; the scan picks it up automatically for any measure whose
+# source grain can resolve it, which is what turns a regional movement into a list
+# of contributing cities without a second code path.
+DIMS = ["region", "city", "segment", "channel", "category", "tier",
+        "warehouse_id", "account_name"]
 
 
 def _js_divergence(p: np.ndarray, q: np.ndarray) -> float:
@@ -38,7 +43,7 @@ def _js_divergence(p: np.ndarray, q: np.ndarray) -> float:
 
 
 def price_volume_mix(cur: pd.DataFrame, base: pd.DataFrame, scale: float,
-                     tel: Telemetry) -> Dict[str, Any]:
+                     tel: Telemetry, revenue_col: str = "net_revenue") -> Dict[str, Any]:
     """Exact additive decomposition of a revenue movement.
 
         dRev = dVolume * p0  +  v1 * dPrice_like_for_like  +  mix effect
@@ -47,7 +52,7 @@ def price_volume_mix(cur: pd.DataFrame, base: pd.DataFrame, scale: float,
     so the three components sum to the total movement by construction.
     """
     def agg(df):
-        g = df.groupby("tier").agg(units=("units", "sum"), rev=("net_revenue", "sum"))
+        g = df.groupby("tier").agg(units=("units", "sum"), rev=(revenue_col, "sum"))
         g["price"] = g["rev"] / g["units"].replace(0, np.nan)
         return g
 
@@ -163,7 +168,7 @@ def contributors(cur: pd.DataFrame, base: pd.DataFrame, scale: float,
 def split(estate: Estate, persona: Persona, tel: Telemetry,
           window: Tuple[date, date], baseline_days: int = 28,
           filters: Optional[Dict[str, Any]] = None,
-          measure: str = "net_revenue") -> Dict[str, Any]:
+          measure: str = "net_revenue", contract=None) -> Dict[str, Any]:
     ws, we = window
     span = (we - ws).days + 1
     bs, be = ws - timedelta(days=baseline_days + 1), ws - timedelta(days=1)
@@ -181,6 +186,12 @@ def split(estate: Estate, persona: Persona, tel: Telemetry,
                                exclude_dims=list((filters or {}).keys()))
     res["contributors"] = top
     res["by_dimension"] = by_dim
-    if measure == "net_revenue":
-        res["identity"] = price_volume_mix(cur, base, scale, tel)
+    # Which physical column carries revenue is a SEMANTIC question, answered once
+    # by the contract's definition reconciliation. If Operations were the
+    # authoritative source the identity would decompose their figure instead, with
+    # no change here.
+    rev_col = contract.measure_column("net_revenue") if contract else "net_revenue"
+    res["revenue_column"] = rev_col
+    if measure == rev_col:
+        res["identity"] = price_volume_mix(cur, base, scale, tel, revenue_col=rev_col)
     return res

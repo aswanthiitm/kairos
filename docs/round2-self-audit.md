@@ -2,7 +2,12 @@
 
 **The Why Layer** · Accenture Innovation Challenge 2026 · BusinessIntelligence.ai
 
-Audited 2 September 2026 against commit `a36439b`. 47 tests passing.
+Audited 2 September 2026 against commit `a36439b`. 125 tests passing.
+
+*Revised the same day, twice. The learned layer (`whylayer/ml/`) landed after the first
+pass, then the semantic layer (`whylayer/fiscal.py`, `whylayer/hierarchy.py`,
+`whylayer/kpi_reconciliation.py`) closed objective 2. Those entries have been rewritten.
+Nothing else was softened, and the items still absent are still listed as absent.*
 
 ## How to read this
 
@@ -19,8 +24,10 @@ I verified each claim against the source before grading. Where I found config th
 than gaps, because they read as features.
 
 **Headline:** the 10 hard *Minimum Prototype Expectations* are 10/10 delivered. The
-gaps are concentrated in *Real-World Complexities* and *Solutioning Areas*, and there
-are **four dead-config items** that currently overstate the build.
+gaps are concentrated in *Real-World Complexities* and *Solutioning Areas*. Of the four
+dead-config items this audit originally named, **two are now implemented** (the fiscal
+calendar and the region/city hierarchy) and the missing KPI-definition reconciliation is
+built; `correction` and `cached` remain dead.
 
 ---
 
@@ -52,7 +59,7 @@ move against a 20pp service collapse. The worklist is sorted by |z|, which is no
 same as sorted by business importance.
 
 ## 2. Reconciles data and business context across heterogeneous sources
-**PARTIAL** — and this is the weakest of the eight.
+**DELIVERED** — this was the weakest of the eight and is the section that changed most.
 
 **What works.** Four sources at three grains and four refresh cadences (60 / 1440 / 15 /
 10080 minutes) are read through one governed access layer. Cross-source *referential*
@@ -61,22 +68,47 @@ shipments dated before their own order, CRM accounts absent from the account mas
 Per-KPI `sliceable_by` declares which dimensions each source grain can actually resolve,
 so `otd_pct × segment` is reported as a grain limit rather than throwing.
 
-**What does not work — three dead-config items:**
+**What was dead config and is now runtime behaviour.** All three items this audit
+originally listed here have been built. A `semantic` stage now runs *before* FITNESS and
+resolves all three; no downstream stage does any of this reasoning itself.
 
-- `fiscal_calendar: "apr_mar"` is declared in the contract and **never read by any
-  code**. All windowing is plain Gregorian dates. An Indian FY client would get wrong
-  period boundaries.
-- `region: {hierarchy: [region, city]}` is declared and **`city` does not exist in the
-  orders table at all**. There is no hierarchy traversal anywhere in the engine —
-  no roll-up, no drill-down.
-- There is **no reconciliation of conflicting KPI definitions**. The brief's real
-  complexity is two systems disagreeing on what "revenue" means. I have exactly one
-  contract, so nothing is ever reconciled — the contract *asserts* a definition rather
-  than resolving a conflict between two.
+- **Fiscal calendar** — `whylayer/fiscal.py`. `fiscal_calendar: apr_mar` is read and
+  obeyed: FY2026 resolves to 2025-04-01..2026-03-31, Q1 is Apr–Jun, April is fiscal
+  month 1. Analyses can be requested as a period (`--fiscal-period FY2027-Q1`) and the
+  boundaries come from the contract. The materiality gate's plan denominator is now the
+  fiscal period the window falls in, prorated by days covered. Switching the key to
+  `jan_dec` or `jul_jun` moves every boundary with no code change, and a test asserts it.
 
-**To branch from:** add `city` to the generator and implement hierarchy roll-up; make
-the fiscal calendar actually drive period boundaries; introduce a second, conflicting
-source definition of net revenue and a documented resolution rule.
+  This fix exposed a **real defect**: the old plan query summed *every* plan row the
+  filter matched and divided by a nominal 30.4-day month, so the denominator grew with
+  the length of the plan table rather than with the period. The threshold had been
+  calibrated against that, so `min_pct_of_plan` was restated from 0.015 to 0.08 — see the
+  comment in the contract. Backtest precision stays 1.0 with zero false alarms.
+
+- **Region → city hierarchy** — `whylayer/hierarchy.py`. `city` is now generated on every
+  order line from the contract's own `members` map (16 cities, each in exactly one
+  region), roll-up and drill-down are implemented, and a regional movement is attributed
+  to its cities with the roll-up checked to close back to the parent. Ratio KPIs are
+  re-aggregated from numerator and denominator rather than averaged. `otd_pct` is
+  **refused** at city level, because the dispatch feed has no city key and attributing
+  one through the ordering account would be inferred rather than measured.
+
+- **Conflicting KPI definitions** — `whylayer/kpi_reconciliation.py`. Two declared
+  definitions of net revenue: Finance `gross - discounts - returns`, Operations
+  `gross - discounts - returns - shipping`. The engine detects the conflict, separates
+  *computational* differences from *contextual* ones, measures the gap on identical rows
+  (₹9.1684 Cr vs ₹8.9927 Cr, +1.92% on the S1 window), applies the configured authority
+  precedence, and keeps the losing definition with the reason it lost. `order_volume`
+  carries two definitions that are genuinely equivalent and is reported as EQUIVALENT,
+  not as a conflict.
+
+  With no resolution rule configured the status is UNRESOLVED and the engine
+  **abstains** — verdict `KPI_DEFINITION_UNRESOLVED`, no movement, no recommendation.
+  Choosing silently would produce a number that looks authoritative and is not.
+
+**Remaining limit:** plan is stated at region × month, so a materiality test on a
+narrower slice (region × channel) widens to the grain plan exists at and says so in
+`plan_basis.grain_note` rather than returning nothing.
 
 ## 3. Identifies and ranks explanatory drivers using appropriate analytical methods
 **DELIVERED** — the strongest part of the build.
@@ -97,9 +129,28 @@ an identity, not an inference) cannot outrank an 80% service failure at L2.
 `propagation.py` adds the mechanism ledger — every hop measured against the same
 untreated cohort in its own lag-aligned window.
 
-**Honest caveat:** "appropriate methods" in the brief includes **traditional ML**, and I
-use **none**. `MethodType.ML` exists in the telemetry enum and is **never emitted by any
-code path**. That is an empty category in my own method ledger.
+**Traditional ML — now present, and deliberately placed.** `whylayer/ml/` adds a
+histogram gradient-boosted **LambdaRank** driver-ranker trained on 960 resolved historical
+episodes, with isotonic calibration and a time-based holdout. `MethodType.ML` is now emitted
+on every run that has candidates to rank.
+
+It is **not** in attribution, and that is the point. Revenue = volume x price is an identity;
+fitting a model to it would be worse arithmetic with error bars. The model is placed where
+the rules were genuinely weakest — ranking — and it exposed a real defect there. The shipped
+rule is `share of movement x ladder confidence`, and a competitor promotion or a price move
+has no share attributed to it, so it sits on the 0.02 floor forever. On the holdout the
+heuristic ranked a price move or a competitor promotion first **zero times out of 51**. The
+learned ranker gets 0.548-0.950 on those same episodes.
+
+Fused, top-1 goes **0.287 → 0.583** (+29.6pp) with the learned term capped at half the
+weight by governance. The ranker is never shown the evidence rung, cannot promote one,
+cannot change a verdict status, and cannot add or remove a candidate;
+`test_ml_cannot_change_a_verdict_or_an_evidence_rung` runs every scenario with and without
+the model and asserts every rung and status is identical.
+
+**Honest caveat, now a smaller one:** the corpus is **simulated** (`data/generate_history.py`),
+not this company's resolved incidents, and the model card says so in the UI. It proves the
+layer learns and can be measured; it is not evidence of accuracy on real episodes.
 
 ## 4. Generates persona-specific narratives supported by traceable evidence
 **DELIVERED**
@@ -213,8 +264,9 @@ non-LLM offline, 91% with narration on.**
   landing within 1% of a real one passes. In the demo, the invented ₹4.2 Cr is caught; an
   invented 9.7% that sits within tolerance of a real 9.64 is not. It is a strong filter on
   material fabrication, not a proof of correctness.
-- The brief asks teams to demonstrate **traditional ML** among the method categories. I
-  demonstrate all of them **except ML**, which I use nowhere.
+- All eight method categories are now demonstrated, ML included. The remaining honesty
+  problem is not that ML is missing but that it is trained on **simulated** history, which
+  the model card states wherever the score is shown.
 
 ---
 
@@ -252,11 +304,11 @@ new category). `fitness.py` assesses five dimensions across all of it.
 |---|---|
 | Aggregation logic | **DELIVERED.** `additive: true/false` per KPI; ratio metrics are never summed, always re-aggregated. This is a real trap avoided. |
 | Business rules | **DELIVERED.** Materiality thresholds, lever authority limits, decision rights — all contract-driven. |
-| **Inconsistent definitions** | **NOT BUILT.** One contract, no conflict, nothing reconciled. |
-| **Hierarchies** | **NOT BUILT.** Declared as `[region, city]`; `city` is not in the data; no traversal exists. |
-| **Calendars** | **NOT BUILT.** `fiscal_calendar: apr_mar` is declared and never read. |
+| **Inconsistent definitions** | **DELIVERED.** Two conflicting definitions of net revenue, detected, quantified, resolved by configured authority, both retained. Abstains when no rule is declared. |
+| **Hierarchies** | **DELIVERED.** `[region, city]` traversed at runtime — roll-up, drill-down, closure check, and a refusal where the source grain cannot resolve city. |
+| **Calendars** | **DELIVERED.** `apr_mar` drives period boundaries, the plan denominator and the reported period; switching the key changes all three. |
 
-Three of five are dead or absent. This is the clearest place improvement should branch.
+All five are now live. This section was three-of-five dead in the first pass.
 
 ## • Sparse history for new products, categories or markets
 **DELIVERED**
@@ -276,21 +328,31 @@ plan), **and** `persistence` (days). The sweep shows 8 slices suppressed on stat
 5 on business impact in the same run — the two gates demonstrably do different work.
 
 ## • Contradictory evidence, missing data and confidence calibration
-**PARTIAL — 2 of 3**
+**PARTIAL — 2.5 of 3**
 
 - **Contradictory evidence — DELIVERED.** Conflict ratio, contested verdict, rung
   suppression. See objective 5.
 - **Missing data — DELIVERED.** Fitness gate catches stale feeds, partition-level load
   failures and class-level load failures (the WH-4 case, where the *failure rows* stopped
   arriving while total volume held).
-- **Confidence calibration — NOT BUILT.** Confidence is *composed* — ladder rank ×
-  playbook outcome confidence × pattern similarity — and **never validated**. Nobody has
-  checked whether a stated 63% corresponds to a 63% success rate. There is no reliability
-  diagram, no Brier score, no calibration curve. The number is a defensible composite, but
-  calling it "calibrated" would be false.
+- **Confidence calibration — HALF BUILT, and the two halves are different numbers.**
 
-**To branch from:** log predicted-vs-realised recovery per recommendation and publish a
-reliability curve once enough outcomes exist.
+  The **ranker's** `P(driver)` is calibrated properly: isotonic regression fitted on a
+  held-out slice that sits *later in time* than the training data, scored on a third slice
+  touched once. Brier 0.1180, ECE 0.0399, and a ten-bin reliability table shipped inside
+  the model card. Raw LambdaRank output is an ordering with no probabilistic reading, so
+  presenting one uncalibrated would have been exactly the false precision this engine
+  exists to refuse.
+
+  The **recommendation** confidence is still *composed* — ladder rank × playbook outcome
+  confidence × pattern similarity — and **never validated**. Nobody has checked whether a
+  stated 63% corresponds to a 63% success rate. That number needs realised outcomes, which
+  needs the engine deployed, which is not something a calibration technique can substitute
+  for.
+
+**To branch from:** log predicted-vs-realised recovery per recommendation and run it through
+the same `whylayer/ml/calibration.py` once enough outcomes exist. The harness is now built;
+what is missing is observations.
 
 ## • Role-based personalization of insight depth, recommended actions and delivery channels
 **PARTIAL — 2 of 3**
@@ -533,7 +595,8 @@ string; lineage per KPI.
 
 A method registry where every step declares its type and *why that type was chosen*.
 Rendered in the UI and in `telemetry.method_mix`. 100% non-LLM offline, 91% with narration.
-**Caveat:** one declared category — ML — is never used.
+All eight declared categories are now emitted by real code paths; ML was the last empty one
+and `whylayer/ml/ranker.py` fills it.
 
 ## • Runtime telemetry covering latency, model calls, token usage and estimated cost
 **DELIVERED — all four**
@@ -560,24 +623,40 @@ total 453 ms | 1 model call | 1,066 in / 184 out tokens | ₹0.17 | 91% non-LLM
 | 8 solutioning areas | 2 | 6 | 0 |
 | **10 minimum expectations** | **10** | **0** | **0** |
 
-## The seven things that are genuinely absent
+## The things that are genuinely absent
 
 1. **Forecasting** — no forward projection of any kind.
-2. **Traditional ML** — zero. An empty category in my own method ledger.
+2. **Causal ML** — no Double ML or causal forest, so no heterogeneous treatment effects.
+   The engine can say "this driver explains the fall"; it cannot yet say "fixing it helps
+   high-frequency accounts three times as much as low-frequency ones". That is the next
+   layer, and it needs real intervention history the ranker's corpus cannot simulate
+   honestly.
 3. **Caching** — a field that is always False.
-4. **Drift detection** — none, for data or model.
-5. **Confidence calibration** — scored, never validated.
-6. **Delivery** — channels declared, nothing sent.
-7. **Scalability evidence** — 45k rows, no load test.
+4. **Drift detection** — none for data. The ranker now has *part* of this: an
+   out-of-distribution gate per candidate against the training range. There is still no
+   population-level drift monitor and no retraining trigger.
+5. **Delivery** — channels declared, nothing sent.
+6. **Scalability evidence** — 45k rows in production, 484k in the training estate; still no
+   load test.
 
-## The four dead-config items — fix these first
+**Two former entries are now closed.** *Traditional ML* — an empty category in the method
+ledger — is filled by `whylayer/ml/`. *Confidence calibration* — "scored, never validated" —
+is now measured: isotonic calibration fitted on a held-out later slice, reported as
+Brier 0.1180 / ECE 0.0399 with a reliability table in the model card. That applies to the
+ranker's probability; the ladder-derived recommendation confidence is still uncalibrated.
+
+## Dead config — two of four now closed
 
 These are worse than gaps because they read as features to anyone browsing the repo:
 
-1. `fiscal_calendar: "apr_mar"` — declared, never read by any code.
-2. `hierarchy: [region, city]` — declared, and `city` **does not exist in the data**.
-3. `correction` — accepted by the API, stored, never read back.
-4. `cached: bool` — present in every telemetry record, always False.
+1. ~~`fiscal_calendar: "apr_mar"` — declared, never read by any code.~~ **CLOSED**:
+   `whylayer/fiscal.py` resolves every fiscal boundary the engine uses, and changing the
+   key changes them.
+2. ~~`hierarchy: [region, city]` — declared, and `city` does not exist in the data.~~
+   **CLOSED**: `city` is generated from the contract's own member map and
+   `whylayer/hierarchy.py` traverses it at runtime.
+3. `correction` — accepted by the API, stored, never read back. **Still dead.**
+4. `cached: bool` — present in every telemetry record, always False. **Still dead.**
 
 ## What I would defend without hesitation
 
@@ -589,11 +668,14 @@ than buried.
 
 ## Where improvement should branch, in priority order
 
-1. **Kill the four dead-config items** — either implement or delete. Half a day.
+1. **Kill the two remaining dead-config items** (`correction`, `cached`) — implement or
+   delete. The fiscal calendar and the region/city hierarchy are done.
 2. **Persist runs** for real auditability. Currently the weakest part of a claim I lean on.
 3. **Correction workflow** — the highest-value missing loop; the field already exists.
-4. **A conflicting second KPI definition** to actually demonstrate reconciliation.
-5. **Confidence calibration harness** — predicted vs realised, a reliability curve.
+4. **Extend reconciliation beyond two sources** — the resolver handles N definitions, but
+   only `net_revenue` and `order_volume` declare more than one today.
+5. **Point the calibration harness at recommendations** — it exists and is validated on
+   the ranker; recommendation confidence still needs realised outcomes to run through it.
 6. **Scale evidence** — a 10M-row estate and a published latency curve.
 7. **Forecasting / "if we do nothing" trajectory** — the most visible missing capability.
 8. **Delivery** — even one working channel would make the personalization claim true.

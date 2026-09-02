@@ -21,6 +21,8 @@ os.makedirs(STORE, exist_ok=True)
 FEEDBACK = os.path.join(STORE, "feedback.jsonl")
 PRIORS = os.path.join(STORE, "priors.json")
 PLAYBOOKS = os.path.join(STORE, "playbooks_learned.json")
+ML_LABELS = os.path.join(STORE, "ml_labels.jsonl")
+SNAPSHOTS = os.path.join(STORE, "feature_snapshots")
 
 
 def _read_json(path: str, default):
@@ -33,6 +35,22 @@ def _read_json(path: str, default):
         return default
 
 
+def save_feature_snapshot(run_id: str, payload: Dict[str, Any]) -> str:
+    """Freeze the exact feature vectors the ranker scored on this run.
+
+    Written at ANALYSIS time, not at feedback time. When an analyst grades this
+    run - possibly weeks later, after the model has been retrained twice - the
+    label has to attach to the evidence as it stood on the day, or the training
+    row describes a state of the world that never existed. This file plus the
+    model version is also what makes a past score reproducible.
+    """
+    os.makedirs(SNAPSHOTS, exist_ok=True)
+    p = os.path.join(SNAPSHOTS, "%s.json" % run_id)
+    with open(p, "w") as f:
+        json.dump(payload, f)
+    return p
+
+
 def record(run_id: str, persona: str, kpi: str, hypothesis_id: str,
            grade: str, correction: Optional[str] = None,
            analyst: str = "analyst") -> Dict[str, Any]:
@@ -42,6 +60,16 @@ def record(run_id: str, persona: str, kpi: str, hypothesis_id: str,
            "correction": correction, "analyst": analyst}
     with open(FEEDBACK, "a") as f:
         f.write(json.dumps(row) + "\n")
+
+    # The same grade becomes a supervised ML label when we still hold the feature
+    # snapshot for that run. accept -> 1, reject -> 0; "partial" is stored for the
+    # audit trail but never becomes a training row, because half a diagnosis is
+    # not a label and choosing which half would be putting an opinion in the data.
+    if os.path.exists(os.path.join(SNAPSHOTS, "%s.json" % run_id)):
+        with open(ML_LABELS, "a") as f:
+            f.write(json.dumps({"ts": row["ts"], "run_id": run_id, "kpi": kpi,
+                                "persona": persona, "hypothesis_id": hypothesis_id,
+                                "grade": grade, "analyst": analyst}) + "\n")
 
     priors = _read_json(PRIORS, {})
     cur = priors.get(hypothesis_id, {"weight": 1.0, "accepts": 0, "rejects": 0})
@@ -105,10 +133,23 @@ def reset() -> Dict[str, Any]:
     """Clear all learned state. Demos and tests must start from a known point,
     and an engine that learns needs an explicit way to forget."""
     removed = []
-    for p in (FEEDBACK, PRIORS, PLAYBOOKS):
+    for p in (FEEDBACK, PRIORS, PLAYBOOKS, ML_LABELS):
         if os.path.exists(p):
             os.remove(p); removed.append(os.path.basename(p))
-    return {"reset": True, "removed": removed}
+    if os.path.isdir(SNAPSHOTS):
+        n = 0
+        for fn in os.listdir(SNAPSHOTS):
+            if fn.endswith(".json"):
+                os.remove(os.path.join(SNAPSHOTS, fn)); n += 1
+        if n:
+            removed.append("feature_snapshots (%d)" % n)
+    # The trained model is deliberately NOT removed. Resetting learned state means
+    # forgetting what this deployment has been told, not deleting a versioned
+    # artefact that ships with the repository and is replaced by retraining.
+    return {"reset": True, "removed": removed,
+            "note": "analyst feedback, priors, learned playbooks and feature "
+                    "snapshots cleared; the trained ranker in models/ is versioned "
+                    "and is replaced by retraining, not by reset"}
 
 
 def stats() -> Dict[str, Any]:
@@ -121,7 +162,16 @@ def stats() -> Dict[str, Any]:
         g[r["grade"]] = g.get(r["grade"], 0) + 1
     acc = g.get("accept", 0)
     total = sum(g.values())
+    ml_rows = 0
+    if os.path.exists(ML_LABELS):
+        with open(ML_LABELS) as f:
+            ml_rows = sum(1 for l in f if l.strip())
+    snaps = (len([x for x in os.listdir(SNAPSHOTS) if x.endswith(".json")])
+             if os.path.isdir(SNAPSHOTS) else 0)
     return {"total_graded": total, "by_grade": g,
             "diagnosis_precision": round(acc / total, 3) if total else None,
             "priors": priors(),
-            "learned_playbooks": _read_json(PLAYBOOKS, {})}
+            "learned_playbooks": _read_json(PLAYBOOKS, {}),
+            "ml_training_labels": ml_rows,
+            "feature_snapshots_held": snaps,
+            "ml_retrain_hint": "python -m whylayer.ml.train --include-feedback"}

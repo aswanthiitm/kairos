@@ -26,6 +26,8 @@ That split is enforced in code, not promised in a diagram:
 | Job | Method | Why |
 |---|---|---|
 | KPI definitions | **Semantic contract** (YAML) | a metric that isn't declared cannot be computed |
+| Whose definition wins | **Definition reconciliation** — compare, quantify, resolve by configured authority | two systems disagreeing about "revenue" is the normal case, not the exception |
+| What period, what level | **Fiscal calendar + dimension hierarchy** | Apr–Mar boundaries and region→city are business facts, not date arithmetic |
 | Detect a real movement | **Statistics** — robust seasonal decomposition, MAD control limits | the anomaly must not contaminate its own baseline |
 | Does it matter | **Business rules** — materiality gate | statistical ≠ important |
 | Where it happened | **Deterministic algebra** — price/volume/mix identity + Adtributor-style lattice scan | arithmetic closes exactly; auditable |
@@ -53,6 +55,235 @@ Bradford Hill's viewpoints (1965) operationalised on Pearl's causal hierarchy (C
 L3 does not require L2. A validated counterfactual is stronger evidence than corroborating
 text, so a hypothesis can reach L3 directly — which is exactly what happens for the CFO,
 whose entitlement denies them the CRM verbatims that would have produced L2.
+
+---
+
+## The semantic layer
+
+Three things that every real estate has, that most prototypes declare and none of them
+obey. All three are resolved **once**, in a `semantic` stage that runs before FITNESS, and
+consumed downstream. No stage re-derives a KPI definition, a fiscal boundary or a
+hierarchy — that duplication is how two parts of one engine end up computing two different
+"net revenues".
+
+### 1. The fiscal calendar is real
+
+`fiscal_calendar: apr_mar` used to be a comment. It now drives period boundaries:
+
+```
+FY2026       2025-04-01 .. 2026-03-31      Q1 Apr–Jun · April = fiscal month 1
+FY2027-Q1    2026-04-01 .. 2026-06-30
+FY2027-M05   2026-08-01 .. 2026-08-31
+```
+
+An analysis can be *asked for* as a period — `--fiscal-period FY2027-Q1` — and the window
+comes from the contract. The materiality gate's plan denominator is the fiscal period the
+window falls in, prorated by days covered. Switching the key to `jan_dec` or `jul_jun`
+moves every boundary with no code change, and a test asserts exactly that.
+
+Making it real **exposed a defect**: the old plan query summed every plan row the filter
+matched and divided by a nominal 30.4-day month, so the denominator grew with the size of
+the plan table rather than with the period. `min_pct_of_plan` had been calibrated against
+that, so it is restated from 0.015 to 0.08 with the reasoning in the contract. Backtest
+precision stays 1.0, false alarms stay at zero.
+
+Gregorian arithmetic is deliberately left alone where fiscal semantics are irrelevant. A
+28-day trailing baseline is 28 days.
+
+### 2. region → city is traversed, not just declared
+
+`city` is generated on every order line **from the contract's own member map**, so the data
+and the config cannot drift apart — 16 cities, each in exactly one region, asserted by a
+test. A regional movement is attributed to its cities and the roll-up is checked to close
+back to the parent:
+
+```
+HIERARCHY DRILL-DOWN: North region -> city  (roll-up closes: True)
+  Delhi             -158.69 L    65.3% of the move
+  Lucknow            -64.87 L    26.7% of the move
+  Jaipur             -12.69 L     5.2% of the move
+  Chandigarh          -6.90 L     2.8% of the move
+```
+
+Two refusals matter more than the traversal:
+
+- **Ratios are re-aggregated, never averaged.** Every KPI declares an `aggregation` block.
+  Rolling four cities up to a region ASP re-divides the summed numerator and denominator;
+  averaging the four city ASPs would weight a city with ten orders like one with ten
+  thousand, and a test asserts the two answers differ.
+- **`otd_pct` is refused at city level.** The dispatch feed has no city key. Attributing
+  one through the ordering account would produce a number that looks fine and means
+  nothing, so the engine reports the grain limit instead. Inferring is worse than refusing,
+  because a refusal is visible.
+
+### 3. Two systems, two definitions of "net revenue"
+
+The brief's real complexity is not a missing number, it is two correct ones:
+
+| | Finance | Operations |
+|---|---|---|
+| formula | `gross - discounts - returns` | `gross - discounts - returns - shipping` |
+| system | Finance ledger (ERP GL) | Ops margin cube |
+| owner | Group Controller | Head of Supply Chain Finance |
+| S1 window | **₹9.1684 Cr** | ₹8.9927 Cr |
+
+```
+KPI RECONCILIATION: net_revenue  [RECONCILED]
+  SELECTED  finance     gross_sales - discounts - returns              Rs 9.1684 Cr
+  rejected  operations  gross_sales - discounts - returns - shipping   Rs 8.9927 Cr
+  difference vs operations: Rs +0.1757 Cr (+1.92%)
+  resolution: configured authority precedence finance > operations selects 'finance'
+```
+
+The engine separates **computational** differences (expression, unit, grain — these change
+the number) from **contextual** ones (owner, system, scope — these describe it). Two
+definitions of `order_volume` that differ only in paperwork are reported as `EQUIVALENT`,
+not as a conflict.
+
+The gap is measured on *identical rows*, so it is definitional and not a data problem. The
+losing definition is kept with the reason it lost; nothing is overwritten.
+
+**The governance line.** With no resolution rule configured, the status is `UNRESOLVED` and
+the engine abstains — verdict `KPI_DEFINITION_UNRESOLVED`, no movement, no recommendation,
+both definitions still on the record. It could pick the first, or the newest, or the
+larger. Any of those produces a number, which is exactly the problem: the number would
+carry no authority and nothing downstream would know that.
+
+**It propagates.** Flipping the precedence to `[operations, finance]` in the contract
+changes the KPI's SQL, the measure column the price/volume/mix identity decomposes, the
+column the difference-in-differences cohorts are built from, and the reported revenue —
+with no code change. There is a test that asserts the whole chain.
+
+This matters for the ML layer specifically: a ranker trained across two incompatible
+definitions of the same KPI would be learning from a measurement that changes meaning
+halfway through.
+
+---
+
+## The learned layer
+
+ML is **deliberately absent from attribution**. Revenue = volume x price is an identity;
+fitting a model to it would be worse arithmetic with a confidence interval. So the learned
+component is placed where the rules were genuinely weakest — **ranking** — and nowhere else.
+
+### The blind spot it fixes
+
+The shipped ranking rule is `share of the movement x ladder confidence`. It is defensible
+and it is also structurally broken for a whole class of driver: a competitor promotion or a
+price move has **no share of the movement attributed to it** by the lattice scan, so it sits
+on the 0.02 floor no matter how strong its evidence. The corpus makes the damage visible:
+
+| top-1, by the driver actually planted | episodes | evidence heuristic | learned model | fused (ships) |
+|---|---|---|---|---|
+| service_failure | 28 | **1.000** | 0.893 | 1.000 |
+| mix_shift | 22 | 0.273 | 1.000 | 0.636 |
+| price_change | 22 | **0.000** | 0.818 | 0.545 |
+| instrumentation | 12 | 0.250 | 1.000 | 0.417 |
+| external_market | 30 | **0.000** | 0.367 | 0.300 |
+
+Across 52 holdout episodes whose true driver was a price move or a competitor promotion,
+the heuristic ranked it first **zero times**. Not rarely — never. That is not a tuning
+problem; it is what happens when a hand-chosen constant meets a driver type it was not
+designed for. (Instrumentation is a red herring in that table: data-quality candidates
+short-circuit in `evidence.verdict` before any ranking runs, so their fused number never
+reaches a user.)
+
+### Where it sits, and why not earlier
+
+```
+SPLIT ──► SOURCE ─────────────────────────────► RANK ──► SOLVE
+          graph admissibility                    │
+          temporal precedence                    ├── evidence heuristic  (share x rung)
+          dose-response                          └── learned prior       (P(driver))
+          corroboration + conflict                        │
+          DiD + placebo ─────────────────────────────► fused ordering
+```
+
+The ranker runs **after** the evidence tests, not before them. The features that separate a
+real driver from a merely plausible one — lag alignment against the graph's declared lag,
+the dose–response gradient, the conflict ratio in the retrieved text, a counterfactual whose
+placebo held — do not exist until those tests have run. Ranking before them would mean
+ranking on share and driver type alone.
+
+### What it is not allowed to do
+
+`whylayer/ml/ranker.py` declares its authority and the tests enforce it:
+
+- it **is never shown the evidence rung**, so its score is independent information rather
+  than a restatement of the ladder — which is what makes fusing the two meaningful;
+- it **cannot promote a rung, change a verdict status, or add or remove a candidate**;
+  those are all settled before it is called and none of them is an argument to it;
+- its weight in the fused ordering is **capped at 0.5 by governance, not by tuning** — the
+  evidence-bearing term keeps at least half the say;
+- a candidate whose evidence falls outside the training distribution is **scored, flagged,
+  and then ignored**; the model is not asked to extrapolate;
+- with no model file installed the engine runs exactly as it did before and **says so** in
+  the method ledger.
+
+`test_ml_cannot_change_a_verdict_or_an_evidence_rung` runs every scenario twice — once with
+the model loaded, once with it removed — and asserts every verdict status and every ladder
+grade is identical. Only the order may differ.
+
+### The model
+
+A **histogram gradient-boosted LambdaRank ensemble**, ~350 lines of numpy, no new
+dependencies. It serialises to **plain JSON** — `models/driver-ranker-v1.json` is a text
+file whose split thresholds are in original feature units, so the one learned component in
+the system is as readable as the rest of it. 42 features, none of them post-hoc: the
+feature contract lists what may never be used (the outcome, the realised recovery, the
+validated driver) and asserts it at import.
+
+Raw LambdaRank scores are orderings, not probabilities, so they pass through an **isotonic
+calibration** fitted on a later, held-out slice before anything calls them a probability.
+
+### How it scored
+
+Time-based holdout on 960 simulated historical episodes — train `2021-04..2024-03`,
+calibrate `2024-04..2024-11`, test `2024-12..2025-10`. The test slice is touched once, at
+the end; hyper-parameters and the fusion weight are selected on the calibration slice.
+
+```
+  arm             top-1      hit@3      MRR     NDCG@3
+  heuristic       0.325      0.903    0.614      0.672
+  learned model   0.772      0.983    0.877      0.896
+  fused (ships)   0.597      0.965    0.773      0.816
+
+  calibration   Brier 0.1211   ECE 0.0364   AUC 0.8040   base rate 0.189
+  abstention    top-p 0.424 when a driver exists vs 0.299 when none (separation AUC 0.617)
+  candidate-generation recall ceiling  0.880
+```
+
+**+27.2pp top-1 over the rule it augments**, with the learned term never exceeding half the
+weight. Two numbers there are deliberately unflattering:
+
+- **separation AUC 0.617.** The probability alone barely distinguishes "this episode has a
+  driver" from "this episode has none". So abstention stays where it was — with the evidence
+  ladder — and the model gets no vote on whether to answer at all.
+- **candidate recall 0.880.** A ranker cannot rank a driver that was never proposed. 12% of
+  planted drivers never reached the candidate set, and that is a ceiling on every number in
+  the table above. It is a candidate-generation problem, not a ranking one.
+
+### Where the labels come from
+
+There is no corpus of resolved incidents yet — `runtime/feedback.jsonl` starts empty. So one
+is simulated: `data/generate_history.py` plants 960 episodes across 16 slices over five
+years, with randomised magnitudes and ~40% null episodes carrying no driver at all, and
+`whylayer/ml/dataset.py` replays **the real engine** over every one of them. The training
+features are produced by the same `featurize` call that runs mid-analysis, so there is no
+train/serve skew to argue about.
+
+This is a **bootstrap and it is labelled as one**, in the model card the UI renders and in
+`cli.py --ml`. Every label an analyst supplies through the feedback loop is worth more:
+`feedback.record` writes the graded candidate against the feature snapshot frozen at
+analysis time, and `--include-feedback` folds those rows in at 5x the weight of a
+simulated one. The path from "an analyst disagreed" to "the ranker learned" is closed.
+
+### One thing this surfaced
+
+Replaying historical windows exposed a real defect in the engine: several reads were
+unbounded, so analysing an old window could use rows that landed **after** it. Harmless in
+production, where the estate ends at today — and fatal to any honest backtest. `Estate.as_of`
+now enforces point-in-time correctness on every read.
 
 ---
 
@@ -236,7 +467,13 @@ recommendation rather than a policy sentence.
  sources            ├── interactions (JSONL, event, 15 min) ────┤   ← unstructured, PII
                     └── market_events (CSV, event, weekly) ─────┘
 
-   semantic contract  ──►  entitlements  ──►  SIFT ──► SPLIT ──► SOURCE ──► SOLVE ──► NARRATE
+   semantic contract  ──►  entitlements  ──►  SEMANTIC ──► FITNESS ──► SIFT ──► SPLIT
+   (definitions,           (row/column/       │
+    lineage, thresholds,    domain, PII)      ├── fiscal calendar   (apr_mar -> period bounds)
+    materiality, levers)                      ├── hierarchies       (region -> city)
+                                              └── KPI reconciliation (finance vs operations)
+                                                        │
+                          ──► SIFT ──► SPLIT ──► SOURCE ──► SOLVE ──► NARRATE
    (definitions,           (row/column/       ↑          ↑          ↑          ↑         ↑
     lineage, thresholds,    domain, PII)   statistics  algebra   retrieval  playbook    LLM
     materiality, levers)                    + rules   + lattice  + causal   memory    + guard
@@ -247,6 +484,7 @@ recommendation rather than a policy sentence.
 
 | Stage | File | What it refuses to do |
 |---|---|---|
+| SEMANTIC | `whylayer/kpi_reconciliation.py` · `fiscal.py` · `hierarchy.py` | pick between competing KPI definitions when no rule says which wins |
 | FITNESS | `whylayer/fitness.py` | analyse an estate that fails its quality gate |
 | SIFT | `whylayer/sift.py` | wake anyone for a statistically real but immaterial move |
 | PROPAGATE | `whylayer/propagation.py` | measure an upstream hop in its effect's window |
@@ -297,11 +535,19 @@ and the engine raises an advisory rather than hiding it.
 ./run.sh                                   # web UI on :8000
 python cli.py --scenario S1 --persona cfo  # headless
 python cli.py --all                        # every scenario x persona
-python -m pytest tests/ -q                 # 47 tests against planted ground truth
+python -m pytest tests/ -q                 # 125 tests against planted ground truth
 python cli.py --sweep                      # estate triage with suppression accounting
 python cli.py --backtest                   # false-alarm scorecard over history
 python cli.py --reset                      # clear learned state (demos start clean)
+python cli.py --ml                         # model card + holdout scorecard for the ranker
+python cli.py --semantics                  # fiscal calendar, hierarchies, KPI definitions
+python cli.py --scenario S1 --fiscal-period FY2027-Q1   # analyse a fiscal period
 python data/generate.py                    # rebuild the estate (seeded, reproducible)
+
+# retraining the ranker (a trained model ships in models/, so this is optional)
+python data/generate_history.py                     # 5 years of episodes with known drivers
+python cli.py --train-ranker --build-corpus         # replay, fit, calibrate, score
+python cli.py --train-ranker --include-feedback     # fold in analyst-graded runs
 export ANTHROPIC_API_KEY=sk-...            # optional: enables LLM narration + guard
 ```
 
@@ -364,8 +610,33 @@ Stated plainly, because the whole thesis is about not overclaiming.
   leaves the denominator and the average goes **up** exactly when behaviour deteriorates.
   Both are recorded in `sources.py` because they are the kind of error that silently
   destroys a driver metric.
-- **Learning is shallow.** Priors re-weight hypothesis ranking and outcomes re-estimate
-  effect sizes; nothing is fine-tuned.
+- **Plan is stated at region × month.** A materiality test on a narrower slice
+  (region × channel) widens to the grain plan exists at and says so in
+  `plan_basis.grain_note`. It does not invent a channel-level plan.
+- **`otd_pct` cannot be cut by city, permanently.** That is a property of the dispatch
+  feed, not a gap to close — the fix is a city key on shipments, in the source system.
+- **Only two KPIs declare competing definitions.** The resolver handles N definitions and
+  three resolution outcomes, but `net_revenue` and `order_volume` are the only KPIs with
+  more than one declared today.
+- **The fiscal calendar is month-aligned.** `start_month` + `year_label` covers Apr–Mar,
+  Jan–Dec and Jul–Jun. It does **not** implement 4-4-5 or 52/53-week retail calendars,
+  which are week-aligned and would need a different period model.
+- **`city` is an attribute of the account, not a ship-to address.** One city per account
+  for the life of the estate; real B2B accounts deliver to several.
+- **The ranker is trained on simulated history.** 960 planted episodes, not this company's
+  resolved incidents. It demonstrates that the layer learns, is calibrated, and can be
+  evaluated on a temporal holdout. It is **not** evidence of accuracy on real episodes, and
+  the model card says so in the UI rather than only here.
+- **The learned gain is largest where the old rule was weakest.** Roughly 44% of the corpus
+  is price or competitor episodes, which the heuristic ranks first exactly never, so the
+  headline +29.6pp overstates what would be seen on a driver mix with fewer of them. The
+  per-driver-type table above is the honest version.
+- **Calibrated on 144 episodes.** Probabilities near 0 and 1 rest on few observations.
+- **Causal ML is not built.** Double ML / causal forests for heterogeneous intervention
+  effects — "this fix helps *this* cohort by *this* much" — is the next layer and is not
+  here. Recommendation impact is still rescaled playbook history.
+- **Learning is otherwise shallow.** Priors re-weight hypothesis ranking and outcomes
+  re-estimate effect sizes; nothing is fine-tuned.
 - **The numeric guard is magnitude-tolerant.** It matches within 1% to survive legitimate
   rounding, so a fabricated figure that lands within 1% of a real one can pass. Run
   `narrator = simulated LLM - hallucinated figures` in the UI: the invented ₹4.2 Cr is
@@ -376,12 +647,20 @@ Stated plainly, because the whole thesis is about not overclaiming.
 
 ```
 config/     semantic contract · causal graph · entitlements · playbooks · LLM pricing
-data/       generator with planted ground truth, DuckDB estate
+data/       generate.py — the estate with planted ground truth
+            generate_history.py — 5 years of resolved episodes for training
 whylayer/   contract · security · sources · fitness · sift · split · evidence
             · propagation · solve · delegation · narrate · triage · pipeline
             · feedback · telemetry
+            fiscal.py — the fiscal calendar (apr_mar, jan_dec, jul_jun)
+            hierarchy.py — region -> city roll-up, drill-down, aggregation semantics
+            kpi_reconciliation.py — competing KPI definitions, resolved and audited
+whylayer/ml/  features (the contract) · gbdt (numpy) · calibration · ranker
+            · dataset · evaluate · train
+models/     driver-ranker-v1.json — the trained model, as readable JSON
 app/        FastAPI service + single-page UI (no CDN, no build step)
-tests/      47 tests scored against ground truth
+tests/      125 tests scored against ground truth
+            (24 on the learned layer, 54 on the semantic layer)
 docs/       business proposal
 ```
 

@@ -172,8 +172,8 @@ def test_telemetry_reports_latency_and_cost():
     r = go("S1")
     t = r["telemetry"]
     assert t["total_ms"] > 0
-    assert [s["stage"] for s in t["stages"]] == ["fitness", "sift", "split", "source",
-                                                "propagate", "solve", "narrate"]
+    assert [s["stage"] for s in t["stages"]] == ["semantic", "fitness", "sift", "split",
+                                                "source", "propagate", "solve", "narrate"]
     assert "usd" in t["llm"] and "inr" in t["llm"]
 
 
@@ -314,10 +314,21 @@ def test_grain_limits_are_reported_not_thrown():
 # ============================================================================
 
 # ---- data fitness gate (Olszak & Bartus: quality was the 20/20 barrier) ----
-def test_fitness_gate_runs_before_anything_else():
+def test_fitness_gate_runs_before_any_analysis():
+    """Quality still gates the run; only the SEMANTIC layer precedes it.
+
+    Resolving what the KPI means and which dates the period covers is not
+    analysis - you cannot assess the fitness of a window you have not resolved,
+    or of a measure with no agreed definition. Everything that actually computes
+    an answer still sits behind the quality gate.
+    """
     r = go("S1")
-    assert r["telemetry"]["stages"][0]["stage"] == "fitness", \
-        "quality must gate the run, not annotate it afterwards"
+    stages = [s["stage"] for s in r["telemetry"]["stages"]]
+    assert stages[0] == "semantic", "meaning is resolved before anything reads data"
+    assert stages[1] == "fitness", "quality must gate the run, not annotate it afterwards"
+    for analysis in ("sift", "split", "source", "solve", "narrate"):
+        assert stages.index("fitness") < stages.index(analysis), \
+            "%s ran before the data fitness gate" % analysis
     assert r["data_fitness"]["verdict"] in ("FIT", "FIT_WITH_CAVEATS", "UNFIT")
 
 

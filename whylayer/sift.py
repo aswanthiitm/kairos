@@ -51,6 +51,85 @@ def _expected(df: pd.DataFrame, widx: Dict[int, float], trail: int = 28) -> pd.D
     return out
 
 
+def _plan_basis(contract: Contract, estate: Estate, persona: Persona, tel: Telemetry,
+                filters: Optional[Dict[str, Any]], ws: date, we: date,
+                delta: float):
+    """Plan for the fiscal months the window touches, prorated by overlap days.
+
+    Filters are applied only for columns the plan table actually carries. Plan is
+    set at region x month; asking it for a channel or a warehouse is a grain
+    question, and the honest answer is to widen to the grain plan is stated at
+    and say so, not to return nothing.
+    """
+    months = contract.fiscal.months_in_window(ws, we)
+    if not months:
+        return None, None
+    try:
+        cols = set(estate.sql("SELECT * FROM plan LIMIT 0", tel, "sift",
+                              "plan table columns").columns)
+    except Exception:
+        return None, None
+    usable = {k: v for k, v in (filters or {}).items() if k in cols}
+    dropped = sorted(set((filters or {}).keys()) - set(usable))
+    row_filter = {k: v for k, v in (persona.row_filter or {}).items() if k in cols}
+    clauses = []
+    for col, vals in row_filter.items():
+        clauses.append("%s IN (%s)" % (col, ", ".join("'%s'" % v for v in vals)))
+    for col, val in usable.items():
+        if isinstance(val, (list, tuple)):
+            clauses.append("%s IN (%s)" % (col, ", ".join("'%s'" % v for v in val)))
+        else:
+            clauses.append("%s = '%s'" % (col, str(val).replace("'", "''")))
+    pairs = " OR ".join("(year = %d AND month = %d)"
+                        % (m["calendar_year"], m["calendar_month"]) for m in months)
+    clauses.append("(%s)" % pairs)
+    q = ("SELECT year, month, SUM(plan_net_revenue) AS p FROM plan WHERE %s "
+         "GROUP BY 1, 2" % " AND ".join(clauses))
+    try:
+        df = estate.sql(q, tel, "sift", "fiscal-period plan target for materiality")
+    except Exception:
+        return None, None
+    if not len(df):
+        return None, None
+    idx = {(int(r["year"]), int(r["month"])): float(r["p"]) for _, r in df.iterrows()}
+    total = 0.0
+    parts = []
+    for m in months:
+        full = idx.get((m["calendar_year"], m["calendar_month"]))
+        if full is None:
+            continue
+        frac = m["days_in_window"] / float(m["days_in_month"])
+        total += full * frac
+        parts.append({"calendar_year": m["calendar_year"],
+                      "calendar_month": m["calendar_month"],
+                      "fiscal_year": m["fiscal_year"],
+                      "fiscal_month": m["fiscal_month"],
+                      "fiscal_quarter": m["fiscal_quarter"],
+                      "days_in_window": m["days_in_window"],
+                      "days_in_month": m["days_in_month"],
+                      "plan_full_month": full,
+                      "plan_prorated": full * frac})
+    if total <= 0:
+        return None, None
+    basis = {
+        "fiscal_calendar": contract.fiscal.key,
+        "periods": sorted({"FY%d-Q%d" % (p["fiscal_year"], p["fiscal_quarter"])
+                           for p in parts}),
+        "months": parts, "plan_prorated_total": total,
+        "filters_applied": usable, "filters_not_on_plan_grain": dropped,
+        "summary": "%s prorated over %d fiscal month(s) = %.0f"
+                   % (", ".join(sorted({"FY%d-M%02d" % (p["fiscal_year"], p["fiscal_month"])
+                                        for p in parts})), len(parts), total),
+    }
+    if dropped:
+        basis["grain_note"] = ("plan is stated at %s grain, so %s could not be applied; "
+                               "the denominator is the wider slice and the test is "
+                               "correspondingly conservative"
+                               % (" x ".join(sorted(cols & {"region", "year", "month"})),
+                                  ", ".join(dropped)))
+    return (abs(delta) / total), basis
+
+
 class Movement(object):
     def __init__(self, **kw):
         self.__dict__.update(kw)
@@ -84,10 +163,14 @@ def detect(kpi: str, persona: Persona, estate: Estate, contract: Contract,
     # feed-volume check: a metric can 'improve' simply because bad rows stopped arriving
     if src == "dispatch":
         where, _ = persona.sql_where(filters)
+        # bounded at the analysis date: the completeness question is "were the
+        # rows there when we looked", and rows that landed afterwards would hide
+        # exactly the gap this test exists to find
         cnt = estate.sql(
             "SELECT dispatch_date AS d, COUNT(*) AS n, "
             "SUM(CASE WHEN on_time THEN 0 ELSE 1 END) AS late "
-            "FROM dispatch %s GROUP BY 1 ORDER BY 1" % (where or ""),
+            "FROM dispatch %s %s dispatch_date <= DATE '%s' GROUP BY 1 ORDER BY 1"
+            % (where or "", "AND" if where else "WHERE", window_end),
             tel, "sift", "dispatch feed row-count profile")
         cnt["d"] = pd.to_datetime(cnt["d"])
         recent = cnt[cnt["d"] >= pd.Timestamp(window_end) - pd.Timedelta(days=6)]
@@ -158,17 +241,15 @@ def detect(kpi: str, persona: Persona, estate: Estate, contract: Contract,
 
     # ------------------------------------------------------- gate 2: materiality
     mat = spec["materiality"]
-    plan_pct = None
+    plan_pct, plan_basis = None, None
     if spec.get("plan_column"):
-        where, _ = persona.sql_where(filters)
-        pq = ("SELECT SUM(plan_net_revenue)/30.4*%d AS p FROM plan %s"
-              % (n, where.replace("WHERE", "WHERE") if where else ""))
-        try:
-            plan_val = float(estate.sql(pq, tel, "sift", "plan target for materiality")
-                             ["p"].iloc[0])
-            plan_pct = abs(delta) / plan_val if plan_val else None
-        except Exception:
-            plan_pct = None
+        # "1.5% of period plan" has to mean the plan for the FISCAL period the
+        # window falls in, prorated by the days actually covered. The previous
+        # form summed every plan row the filter matched and divided by a nominal
+        # 30.4-day month, which made the denominator grow with the length of the
+        # plan table rather than with the period under analysis.
+        plan_pct, plan_basis = _plan_basis(contract, estate, persona, tel,
+                                           filters, window_start, window_end, delta)
 
     checks = {
         "abs_inr": bool(abs(delta) >= mat.get("min_abs_inr", 0)) if spec["unit"] == "INR" else True,
@@ -179,8 +260,10 @@ def detect(kpi: str, persona: Persona, estate: Estate, contract: Contract,
     material = all(checks.values())
     tel.method("sift", MethodType.RULES, "materiality gate",
                "statistical significance is not business significance; a movement "
-               "must also move plan by a contract-defined amount and persist",
-               detail=str(checks))
+               "must also move plan by a contract-defined amount and persist; the "
+               "plan denominator is the fiscal period the window falls in, resolved "
+               "from the contract's fiscal calendar rather than a nominal month",
+               detail="%s plan_basis=%s" % (checks, (plan_basis or {}).get("summary")))
 
     verdict = "MATERIAL" if material else "NOT_MATERIAL"
     if dq_flags:
@@ -195,6 +278,8 @@ def detect(kpi: str, persona: Persona, estate: Estate, contract: Contract,
         pct_change=pct, z=float(z), sigma=float(sigma), persistence_days=persistence,
         history_days=hist_days, sparse=sparse, plan_pct=plan_pct,
         material=material, gate_checks=checks, verdict=verdict,
+        fiscal=contract.fiscal_window(window_start, window_end),
+        plan_basis=plan_basis,
         data_quality_flags=dq_flags, freshness=fresh,
         lineage=contract.lineage(kpi),
         series=[{"d": d.strftime("%Y-%m-%d"), "v": float(v),

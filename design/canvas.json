@@ -1,0 +1,18 @@
+{
+  "artboards": [
+    { "file": "Worklist.dc.html",   "x": 0,    "y": 0,    "w": 1440, "h": 900, "title": "1 · Worklist" },
+    { "file": "Main.dc.html",       "x": 1560, "y": 0,    "w": 1440, "h": 900, "title": "2 · Investigation" },
+    { "file": "Abstention.dc.html", "x": 3120, "y": 0,    "w": 1440, "h": 900, "title": "3 · Abstention" },
+    { "file": "Evidence.dc.html",   "x": 0,    "y": 1060, "w": 1180, "h": 940, "title": "4 · Evidence detail" },
+    { "file": "Personas.dc.html",   "x": 1300, "y": 1060, "w": 1240, "h": 760, "title": "5 · Persona split" },
+    { "file": "DirectionDark.dc.html",     "x": 2660, "y": 1060, "w": 700, "h": 520, "title": "Direction B · Dark" },
+    { "file": "DirectionCaseFile.dc.html", "x": 3480, "y": 1060, "w": 700, "h": 520, "title": "Direction C · Case file" }
+  ],
+  "annotations": [
+    { "id": "direction-note", "x": 2660, "y": 900, "w": 1520,
+      "text": "Direction A (the built screens above) is committed: bone ground, hairline rules, oxblood accent, Archivo + Source Serif 4 + JetBrains Mono. B and C are the two axes still open — light-forensic vs dark-instrument, and dashboard vs document. Pick one and I'll rebuild the screens into it." },
+    { "id": "abstention-note", "x": 3120, "y": -130, "w": 1440,
+      "text": "The abstention screen inverts: the refusal is stated as the finding, the two rivals are weighed identically so neither looks favoured, and the separating test gets the dark panel and the primary button. 'Override & act anyway' stays available but subordinate." }
+  ],
+  "launch": { "view": "canvas" }
+}

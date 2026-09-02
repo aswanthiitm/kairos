@@ -60,10 +60,12 @@ function render(d){
     ${cardRecs(d)}
   </div>
   <div class="col">
+    ${cardSemantics(d)}
     ${cardFitness(d)}
     ${cardPersona(d)}
     ${cardHypotheses(d)}
     ${cardSeparating(d)}
+    ${cardMlRanker(d)}
     ${cardMethods(d)}
     ${cardTelemetry(d)}
   </div>`;
@@ -233,6 +235,7 @@ function cardHypotheses(d){
         ${test('identity','identity',x=>esc(x.detail))}
         ${test('instrumentation','instrumentation',x=>esc(x.detail))}
       </div>
+      ${mlLine(g)}
       ${(h.evidence_docs||[]).slice(0,3).map(doc=>`<div class="doc">
         <b>${esc(doc.type)} · ${esc(doc.ts)} · ${esc(doc.account_name)} · ${esc(doc.author_role)}</b>
         ${esc(doc.text.slice(0,190))}${doc.text.length>190?'…':''}</div>`).join('')}
@@ -243,6 +246,113 @@ function cardHypotheses(d){
     </div>`;}).join('');
   return `<div class="card"><div class="chead"><span class="ctitle">Evidence ladder — hypotheses</span>
     <span class="pill">L0 co-movement → L3 counterfactual</span></div>${items||'<p>No hypotheses.</p>'}</div>`;
+}
+
+function mlLine(g){
+  const m=g.ml; if(!m) return '';
+  const r=g.rank_score;
+  const ood=!m.in_distribution;
+  return `<div class="test"><i><span class="tag t-ML">ML</span></i><span>
+    learned prior <b>P(driver) = ${m.probability.toFixed(3)}</b> · ranked ${m.rank} of ${m.of_candidates}
+    ${ood?`<span style="color:var(--warn)"> · outside the training distribution
+      (${m.features_outside_training_range} features), score not applied</span>`:''}
+    ${r?`<br><span style="color:var(--ink3);font-size:11px">rank score ${r.heuristic.toFixed(3)}
+      (evidence heuristic) → ${r.fused.toFixed(3)} fused at weight ${r.ml_weight.toFixed(2)}
+      · reordering only: the rung above was not set by this model</span>`:''}
+  </span></div>`;
+}
+
+function cardSemantics(d){
+  const s=d.semantics; if(!s) return '';
+  const fc=s.fiscal_calendar||{}, fw=fc.window||{};
+  const defs=Object.entries(s.kpi_definitions||{});
+  const h=d.hierarchy;
+  const recon = defs.map(([kpi,x])=>{
+    const n=x.numeric||{}, vals=n.values||{}, gaps=n.gaps||{};
+    const rows=Object.keys(vals).sort().map(k=>{
+      const sel = k===x.selected;
+      return `<tr><td class="m">${sel?'<b>SELECTED</b>':'rejected'}</td>
+        <td class="m">${esc(k)}</td>
+        <td>${esc((x.rejected.find(r=>r.key===k)||{}).formula || x.selected_formula||'')}</td>
+        <td class="m" style="text-align:right">${inr(vals[k])}</td></tr>`;}).join('');
+    const gap=Object.entries(gaps).map(([k,g])=>
+      `<div style="font-size:11.5px;color:var(--warn);margin-top:6px">
+         difference vs ${esc(k)}: <b>${inr(g.absolute_difference)}</b>
+         (${(100*(g.pct_difference||0)).toFixed(2)}%) — measured on identical rows,
+         so the gap is definitional, not a data problem</div>`).join('');
+    return `<div style="margin-bottom:12px">
+      <div style="font-size:12px;margin-bottom:4px"><b>${esc(kpi)}</b>
+        <span class="badge ${x.status==='RECONCILED'?'b-competing':'b-confirmed'}">${esc(x.status)}</span></div>
+      ${Object.keys(vals).length?`<table><tbody>${rows}</tbody></table>`:''}
+      ${gap}
+      <div style="font-size:11.5px;color:var(--ink3);margin-top:6px">
+        ${esc(x.reason||'')}${x.rationale?`<br>${esc(x.rationale)}`:''}</div></div>`;}).join('');
+  const drill = (h&&h.supported)
+    ? `<table><thead><tr><th>${esc(h.child_level)}</th><th style="text-align:right">move</th>
+         <th style="text-align:right">share</th></tr></thead><tbody>
+       ${h.children.filter(c=>c.move!=null).map(c=>`<tr><td>${esc(c.value)}</td>
+         <td class="m" style="text-align:right">${inr(c.move)}</td>
+         <td class="m" style="text-align:right">${c.share_of_move!=null?(100*c.share_of_move).toFixed(1)+'%':'–'}</td></tr>`).join('')}
+       </tbody></table>
+       <div style="font-size:11.5px;color:var(--ink3);margin-top:6px">
+         ${h.aggregation} measure · roll-up back to ${esc(h.parent_value)}
+         ${h.roll_up_check.closes?'closes exactly':'<b style="color:var(--bad)">does not close</b>'}</div>`
+    : (h&&h.reason)?`<div style="font-size:11.5px;color:var(--warn)">${esc(h.reason)}</div>`:'';
+  return `<div class="card"><div class="chead"><span class="ctitle">Semantic layer</span>
+    <span class="pill">resolved once, before analysis</span></div>
+    <div style="font-size:12px;color:var(--ink2);margin-bottom:10px">
+      <b>Fiscal period.</b> ${esc(fw.label||'')} on the
+      <span class="m">${esc(fc.key||'')}</span> calendar (${esc(fc.label||'')}).
+      ${fw.crosses_fiscal_year?'<span style="color:var(--warn)"> This window crosses a fiscal year end.</span>':''}
+      ${fc.requested_period?`<br>Requested as <span class="m">${esc(fc.requested_period)}</span>;
+        boundaries resolved from the contract, not from month arithmetic.`:''}
+    </div>
+    ${recon?`<div style="font-size:12px;color:var(--ink2);margin-bottom:6px">
+       <b>Competing KPI definitions.</b> Both are correct inside their own system.
+       The engine reconciles rather than picking one quietly.</div>${recon}`:''}
+    ${drill?`<div style="font-size:12px;color:var(--ink2);margin:10px 0 6px">
+       <b>Hierarchy drill-down.</b> region → city, traversed from the contract.</div>${drill}`:''}
+  </div>`;
+}
+
+function cardMlRanker(d){
+  const m=d.ml_ranker; if(!m) return '';
+  if(m.status!=='active'){
+    return `<div class="card"><div class="chead"><span class="ctitle">ML driver ranker</span>
+      <span class="badge b-data_quality">${esc(m.status)}</span></div>
+      <p style="font-size:12px;color:var(--ink2)">${esc(m.reason||'')}
+      Ranking falls back to the evidence heuristic alone.</p></div>`;
+  }
+  const h=m.holdout||{}, rk=h.ranking||{}, sp=h.split||{}, cal=h.calibration||{};
+  const arm=(n,k)=>`<tr><td class="m">${n}</td>
+    <td class="m">${(rk[k]&&rk[k].top1_accuracy!=null)?rk[k].top1_accuracy.toFixed(3):'–'}</td>
+    <td class="m">${(rk[k]&&rk[k].hit_at_3!=null)?rk[k].hit_at_3.toFixed(3):'–'}</td>
+    <td class="m">${(rk[k]&&rk[k].ndcg_at_3!=null)?rk[k].ndcg_at_3.toFixed(3):'–'}</td></tr>`;
+  const feats=Object.entries(m.top_features||{}).slice(0,6)
+    .map(([k,v])=>`<span class="pill">${esc(k)} ${v.toFixed(3)}</span>`).join(' ');
+  return `<div class="card"><div class="chead"><span class="ctitle">ML driver ranker</span>
+    <span class="badge b-confirmed">${esc(m.model_version||'')}</span></div>
+    <div style="font-size:12px;color:var(--ink2);margin-bottom:10px">
+      A gradient-boosted ranking model trained on ${sp.train_episodes||0} resolved historical
+      episodes. It is deliberately not shown the evidence rung, so its score is independent
+      information rather than a restatement of the ladder. <b>It reorders candidates and does
+      nothing else</b> — it cannot promote a rung, change a verdict, or invent a candidate.
+    </div>
+    <table><thead><tr><th>arm</th><th>top-1</th><th>hit@3</th><th>NDCG@3</th></tr></thead>
+      <tbody>${arm('evidence heuristic (was)','heuristic')}${arm('learned model alone','ml')}
+      ${arm('fused (ships)','fused')}</tbody></table>
+    <div style="font-size:11.5px;color:var(--ink3);margin-top:8px">
+      time-based holdout · train ${esc(sp.train_window||'')} → test ${esc(sp.test_window||'')}
+      (${sp.test_episodes||0} episodes, never seen during fitting or selection)<br>
+      calibration Brier ${cal.brier!=null?cal.brier.toFixed(4):'–'} ·
+      ECE ${cal.ece!=null?cal.ece.toFixed(4):'–'} ·
+      candidate-generation recall ceiling
+      ${h.candidate_recall&&h.candidate_recall.overall!=null?h.candidate_recall.overall.toFixed(3):'–'}
+    </div>
+    <div style="margin-top:10px">${feats}</div>
+    <div style="font-size:11.5px;color:var(--warn);margin-top:10px">
+      ${(m.limitations||[]).map(x=>`• ${esc(x)}`).join('<br>')}</div>
+  </div>`;
 }
 
 function cardSeparating(d){

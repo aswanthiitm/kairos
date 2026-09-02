@@ -35,6 +35,7 @@ from .contract import Contract
 from .security import Persona
 from .sources import Estate
 from .telemetry import Telemetry, MethodType
+from .ml.ranker import fuse_episode
 
 LADDER = {"L0": "co-movement", "L1": "precedence + dose-response",
           "L2": "independent corroboration", "L3": "counterfactual"}
@@ -132,12 +133,12 @@ def retrieve(estate: Estate, persona: Persona, tel: Telemetry,
 
 # ------------------------------------------------------------------ causal tests
 def _series(estate: Estate, persona: Persona, tel, where_extra: Dict[str, Any],
-            start: date, end: date) -> pd.DataFrame:
+            start: date, end: date, measure_col: str = "net_revenue") -> pd.DataFrame:
     where, _ = persona.sql_where(where_extra)
     clause = where or "WHERE 1=1"
-    q = ("SELECT order_date AS d, SUM(net_revenue) AS v, SUM(units) AS u FROM orders %s "
+    q = ("SELECT order_date AS d, SUM(%s) AS v, SUM(units) AS u FROM orders %s "
          "AND order_date BETWEEN DATE '%s' AND DATE '%s' GROUP BY 1 ORDER BY 1"
-         % (clause, start, end))
+         % (measure_col, clause, start, end))
     df = estate.sql(q, tel, "source", "cohort series for counterfactual")
     df["d"] = pd.to_datetime(df["d"])
     return df
@@ -145,7 +146,8 @@ def _series(estate: Estate, persona: Persona, tel, where_extra: Dict[str, Any],
 
 def difference_in_differences(estate: Estate, persona: Persona, tel: Telemetry,
                               treated: Dict[str, Any], control: Dict[str, Any],
-                              window: Tuple[date, date], baseline_days: int = 28
+                              window: Tuple[date, date], baseline_days: int = 28,
+                              measure_col: str = "net_revenue"
                               ) -> Optional[Dict[str, Any]]:
     """The L3 test. Treated and control are dimension filters describing an
     exposed and an unexposed cohort. We also run a placebo on the pre-period:
@@ -153,10 +155,10 @@ def difference_in_differences(estate: Estate, persona: Persona, tel: Telemetry,
     invalid and we refuse to award L3."""
     ws, we = window
     bs, be = ws - timedelta(days=baseline_days + 1), ws - timedelta(days=1)
-    t_post = _series(estate, persona, tel, treated, ws, we)
-    c_post = _series(estate, persona, tel, control, ws, we)
-    t_pre = _series(estate, persona, tel, treated, bs, be)
-    c_pre = _series(estate, persona, tel, control, bs, be)
+    t_post = _series(estate, persona, tel, treated, ws, we, measure_col)
+    c_post = _series(estate, persona, tel, control, ws, we, measure_col)
+    t_pre = _series(estate, persona, tel, treated, bs, be, measure_col)
+    c_pre = _series(estate, persona, tel, control, bs, be, measure_col)
     if min(len(t_post), len(c_post), len(t_pre), len(c_pre)) < 5:
         return None
 
@@ -208,8 +210,8 @@ def difference_in_differences(estate: Estate, persona: Persona, tel: Telemetry,
 
 
 def dose_response(estate: Estate, persona: Persona, tel: Telemetry,
-                  window: Tuple[date, date], baseline_days: int = 28
-                  ) -> Optional[Dict[str, Any]]:
+                  window: Tuple[date, date], baseline_days: int = 28,
+                  measure_col: str = "net_revenue") -> Optional[Dict[str, Any]]:
     """Do accounts that experienced MORE late deliveries show a LARGER revenue
     fall? A monotone gradient is Bradford Hill's biological-gradient viewpoint
     and is far harder to produce by coincidence than a simple correlation."""
@@ -224,13 +226,13 @@ def dose_response(estate: Estate, persona: Persona, tel: Telemetry,
       WHERE d.dispatch_date BETWEEN DATE '%s' AND DATE '%s' GROUP BY 1),
     rev AS (
       SELECT account_id,
-             AVG(CASE WHEN order_date BETWEEN DATE '%s' AND DATE '%s' THEN net_revenue END) AS post,
-             AVG(CASE WHEN order_date BETWEEN DATE '%s' AND DATE '%s' THEN net_revenue END) AS pre
+             AVG(CASE WHEN order_date BETWEEN DATE '%s' AND DATE '%s' THEN {m} END) AS post,
+             AVG(CASE WHEN order_date BETWEEN DATE '%s' AND DATE '%s' THEN {m} END) AS pre
       FROM orders %s GROUP BY 1)
     SELECT r.account_id, COALESCE(l.late_n,0) AS late_n, r.pre, r.post
     FROM rev r LEFT JOIN late l ON l.account_id = r.account_id
     WHERE r.pre IS NOT NULL AND r.post IS NOT NULL AND r.pre > 0
-    """ % (bs, we, ws, we, bs, be, clause)
+    """.replace("{m}", measure_col) % (bs, we, ws, we, bs, be, clause)
     df = estate.sql(q, tel, "source", "per-account exposure vs response")
     if len(df) < 12:
         return None
@@ -480,8 +482,12 @@ def grade(hyp: Dict[str, Any], contract: Contract, estate: Estate, persona: Pers
             res["ladder"] = "L1"
 
     # --- L1 reinforcement: dose-response gradient
+    # Which column carries revenue is decided once, by the contract's definition
+    # reconciliation. The causal tests ask rather than assume, so a change of
+    # authoritative definition reaches the counterfactual too.
+    measure_col = contract.measure_column("net_revenue")
     if hyp["driver_type"] == "service_failure":
-        dr = dose_response(estate, persona, tel, window)
+        dr = dose_response(estate, persona, tel, window, measure_col=measure_col)
         if dr:
             res["tests"]["dose_response"] = dr
             if dr["p_value"] < 0.05 and dr["spearman_rho"] < 0:
@@ -542,7 +548,8 @@ def grade(hyp: Dict[str, Any], contract: Contract, estate: Estate, persona: Pers
     if hyp.get("exposure") and hyp.get("control") and res["ladder"] != "L0" or (
             hyp.get("exposure") and hyp.get("control")):
         did = difference_in_differences(estate, persona, tel, hyp["exposure"],
-                                        hyp["control"], window)
+                                        hyp["control"], window,
+                                        measure_col=measure_col)
         if did:
             res["tests"]["counterfactual"] = did
             if did["parallel_trends_ok"] and did["p_value"] < 0.05:
@@ -554,6 +561,48 @@ def grade(hyp: Dict[str, Any], contract: Contract, estate: Estate, persona: Pers
                     "design did not validate - parallel trends failed or the effect is "
                     "inside the noise; L3 withheld")
     return res
+
+
+LADDER_CONF = {"L3": 0.85, "L2": 0.65, "L1": 0.40, "L0": 0.20}
+
+
+def heuristic_rank_score(g: Dict[str, Any]) -> float:
+    """Share-weighted ladder confidence - the rule that has always ordered these.
+
+    A 10% mix effect that is L3 "for free" (it is an identity, not an inference)
+    must not outrank an 80% service failure that reached L2 on real evidence.
+    Analyst feedback moves ``prior_weight``.
+    """
+    ep = abs(g["hyp"].get("explanatory_power") or 0.0)
+    c = LADDER_CONF.get(g["grade"]["ladder"], 0.2) * g["grade"].get("prior_weight", 1.0)
+    return max(ep, 0.02) * c
+
+
+def _order(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Order candidates: the evidence heuristic, fused with the learned prior when
+    ``ml_driver_ranker`` has scored this run.
+
+    The fusion is a REORDERING and only that. Everything that decides what may be
+    claimed - which candidates exist, which rung each reached, which status the
+    verdict carries - is already fixed by the time this runs, and none of it is
+    visible here. If no model is loaded, ``fuse_episode`` returns the heuristic
+    unchanged and the engine behaves exactly as it did before the layer existed.
+    """
+    if not items:
+        return items
+    heur = [heuristic_rank_score(g) for g in items]
+    ml = [(g["grade"].get("ml") or {}) for g in items]
+    probs = [m.get("probability") for m in ml]
+    ind = [bool(m.get("in_distribution", True)) for m in ml]
+    alpha = next((m["fusion_alpha"] for m in ml if m.get("fusion_alpha") is not None),
+                 0.0)
+    fused = fuse_episode(heur, probs, ind, alpha)
+    for g, h, f in zip(items, heur, fused):
+        g["grade"]["rank_score"] = {"heuristic": round(h, 6),
+                                    "fused": round(f, 6),
+                                    "ml_weight": alpha}
+    return [g for _, g in sorted(zip(fused, items),
+                                 key=lambda t: -t[0])]
 
 
 def verdict(graded: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -568,16 +617,7 @@ def verdict(graded: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "leaders": dq}
     strong = [g for g in live if g["grade"]["ladder"] in ("L2", "L3")]
     if len(strong) >= 1:
-        # Rank by share-weighted confidence, not by ladder alone. A 10% mix effect
-        # that is L3 "for free" (it is an identity, not an inference) must not
-        # outrank an 80% service failure that reached L2 on real evidence.
-        conf = {"L3": 0.85, "L2": 0.65, "L1": 0.40, "L0": 0.20}
-        def _rank(g):
-            ep = abs(g["hyp"].get("explanatory_power") or 0.0)
-            c = conf.get(g["grade"]["ladder"], 0.2)
-            c *= g["grade"].get("prior_weight", 1.0)      # analyst feedback moves this
-            return -(max(ep, 0.02) * c)
-        strong.sort(key=_rank)
+        strong = _order(strong)
         top = strong[0]
         rivals = [g for g in strong[1:]
                   if g["grade"]["ladder"] == top["grade"]["ladder"]
@@ -589,7 +629,7 @@ def verdict(graded: List[Dict[str, Any]]) -> Dict[str, Any]:
                               "data cannot separate them"}
         return {"status": "CONFIRMED", "leaders": strong, "reason":
                 "at least one hypothesis reached L2 or better with a validated design"}
-    weak = [g for g in live if g["grade"]["ladder"] == "L1"]
+    weak = _order([g for g in live if g["grade"]["ladder"] == "L1"])
     if len(weak) >= 2:
         return {"status": "COMPETING", "leaders": weak,
                 "reason": "several explanations are merely associated; none is corroborated"}

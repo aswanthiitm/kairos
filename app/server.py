@@ -16,6 +16,8 @@ from whylayer.pipeline import run, SCENARIOS
 from whylayer import feedback as FB
 from whylayer.triage import sweep as do_sweep, backtest as do_backtest
 from whylayer.telemetry import Telemetry
+from whylayer.ml import ranker as MLR
+from whylayer.fiscal import FiscalCalendarError
 from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -76,7 +78,7 @@ def freshness() -> Any:
 
 @app.get("/api/analyse")
 def analyse(scenario: str = "S1", persona: str = "cfo", offline: bool = False,
-            narrator: str = "auto") -> Any:
+            narrator: str = "auto", fiscal_period: Optional[str] = None) -> Any:
     if scenario not in SCENARIOS:
         raise HTTPException(404, "unknown scenario")
     if persona not in PERSONAS:
@@ -84,8 +86,10 @@ def analyse(scenario: str = "S1", persona: str = "cfo", offline: bool = False,
     try:
         return JSONResponse(json.loads(json.dumps(
             run(scenario, persona, CONTRACT, ESTATE, force_offline=offline,
-                narrator_mode=narrator),
+                narrator_mode=narrator, fiscal_period=fiscal_period),
             default=str)))
+    except FiscalCalendarError as ex:
+        raise HTTPException(400, str(ex))
     except Exception as ex:  # surfaced rather than swallowed
         raise HTTPException(500, "%s: %s" % (type(ex).__name__, ex))
 
@@ -136,6 +140,44 @@ def reset() -> Any:
 @app.get("/api/learning")
 def learning() -> Any:
     return FB.stats()
+
+
+@app.get("/api/semantics")
+def semantics() -> Any:
+    """The semantic layer as the contract resolves it: the fiscal calendar and the
+    periods it produces, every declared dimension hierarchy with its members and
+    per-KPI availability, and the reconciliation of every competing KPI definition
+    with the rule that selected the winner. Served because a semantic decision that
+    cannot be inspected at runtime is not governance, it is a comment."""
+    from whylayer.hierarchy import available_levels
+    from whylayer.kpi_reconciliation import summarise
+    f = CONTRACT.fiscal
+    probe = date(2026, 8, 30)
+    return {
+        "fiscal_calendar": {
+            "key": f.key, "label": f.label, "start_month": f.start_month,
+            "year_label": f.year_label,
+            "example_periods": {t: [str(x) for x in f.period_bounds(t)]
+                                for t in ("FY2026", "FY2027", "FY2027-Q1",
+                                          "FY2027-Q2", "FY2027-M05")},
+            "today": f.describe(probe),
+        },
+        "hierarchies": {d: h.to_dict() for d, h in CONTRACT.hierarchies().items()},
+        "level_availability": {k: available_levels(CONTRACT, k, "region")
+                               for k in sorted(CONTRACT.kpis)},
+        "kpi_definitions": {k: summarise(r)
+                            for k, r in CONTRACT.reconciliations.items()},
+        "unresolved": CONTRACT.unresolved_definitions(),
+    }
+
+
+@app.get("/api/ml")
+def ml_model_card() -> Any:
+    """The driver ranker's model card: what it was trained on, how it scored on a
+    time-based holdout, what it is allowed to do, and where it falls over.
+    Served as an endpoint because a learned component that cannot be inspected at
+    runtime is not auditable, whatever the documentation says."""
+    return MLR.get().summary()
 
 
 @app.get("/")

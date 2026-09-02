@@ -12,10 +12,14 @@ can be scored against what was actually planted.
 
 Deterministic: seeded, so every run reproduces the same estate.
 """
-import json, os, random, hashlib
+import json, os, random, hashlib, sys
 from datetime import date, timedelta
 import numpy as np
 import pandas as pd
+import yaml
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from whylayer.fiscal import from_contract as fiscal_from_contract
 
 SEED = 20260831
 random.seed(SEED); np.random.seed(SEED)
@@ -40,6 +44,31 @@ WAREHOUSES= ["WH-1", "WH-2", "WH-3", "WH-4"]
 LIST_PRICE = {"Dairy": 240.0, "Staples": 95.0, "Snacks": 180.0,
               "Beverages": 130.0, NEW_CAT: 420.0}
 TIER_DISCOUNT = {"Premium": 0.02, "Standard": 0.09, "Discount": 0.22}
+
+# Geography and the fiscal calendar are read from the semantic contract, not
+# restated here. A city list that disagreed with config/kpi_contract.yaml would
+# make hierarchy roll-up silently lossy, and there would be nothing to catch it.
+_CONTRACT = yaml.safe_load(open(os.path.join(
+    os.path.dirname(HERE), "config", "kpi_contract.yaml")))
+CITIES = _CONTRACT["dimensions"]["region"]["members"]
+FISCAL = fiscal_from_contract(_CONTRACT)
+
+# Revenue components. Finance and Operations disagree about one of them - see
+# kpi_definitions in the contract - so the base facts have to exist separately
+# rather than being collapsed into a single net figure at generation time.
+# Returns are a STABLE per-account rate, not a per-line lottery. Some buyers
+# return more than others and they keep doing it; modelling it as a coin flip
+# would inject variance that has nothing to do with the mechanisms under test and
+# would widen the control limits that are supposed to detect them.
+RETURN_RATE_BAND = (0.004, 0.030)
+SHIP_PCT = {"Direct": (0.012, 0.022), "Distributor": (0.010, 0.018),
+            "ModernTrade": (0.018, 0.032), "Ecommerce": (0.028, 0.048)}
+
+# Dedicated streams for the new facts. The scenario RNG must draw exactly the
+# same sequence it drew before these columns existed, or every planted effect
+# shifts and the ground truth in this file stops describing the estate.
+RNG_GEO = random.Random(SEED + 101)
+RNG_FIN = random.Random(SEED + 202)
 
 # ---------------------------------------------------------------- scenarios
 SC = {
@@ -96,6 +125,8 @@ def build_accounts():
                 wh = "WH-3"
             base = {"Enterprise": 145.0, "Mid-Market": 52.0, "SMB": 17.0}[seg] * random.uniform(0.75, 1.3) * 280.0
             rows.append(dict(account_id=aid, account_name=nm, region=r, segment=seg,
+                             city=RNG_GEO.choice(CITIES[r]),
+                             return_rate=round(RNG_FIN.uniform(*RETURN_RATE_BAND), 5),
                              warehouse_id=wh, base_units=round(base, 2),
                              channel=random.choices(CHANNELS, weights=[.3, .3, .25, .15])[0],
                              contact_phone="+91%d" % random.randint(6000000000, 9999999999),
@@ -167,12 +198,27 @@ for d in dates:
             disc = TIER_DISCOUNT[tier] * random.uniform(0.9, 1.1)
             price = lp * (1 - disc) * random.uniform(0.99, 1.01)
             oid += 1
+            # Base facts, each rounded once so the two competing definitions are
+            # exact sums of their components and the reconciliation delta is real
+            # arithmetic rather than accumulated rounding.
+            gross = round(lp * units, 2)
+            billed = round(price * units, 2)
+            disc_amt = round(gross - billed, 2)
+            ret_amt = round(billed * a.return_rate * RNG_FIN.uniform(0.7, 1.3), 2)
+            fin_net = round(gross - disc_amt - ret_amt, 2)
+            lo, hi = SHIP_PCT[a.channel]
+            ship = round(max(0.0, fin_net) * RNG_FIN.uniform(lo, hi), 2)
             order_rows.append(dict(
                 order_id="ORD-%06d" % oid, order_date=d, account_id=a.account_id,
-                account_name=a.account_name, region=a.region, segment=a.segment,
+                account_name=a.account_name, region=a.region, city=a.city,
+                segment=a.segment,
                 channel=a.channel, warehouse_id=a.warehouse_id, category=cat, tier=tier,
                 units=units, list_price=round(lp, 2), discount_pct=round(disc, 4),
-                unit_price=round(price, 2), net_revenue=round(price * units, 2)))
+                unit_price=round(price, 2),
+                gross_revenue=gross, discount_amount=disc_amt,
+                returns_amount=ret_amt, shipping_cost=ship,
+                net_revenue=fin_net,                       # FINANCE definition
+                net_revenue_ops=round(fin_net - ship, 2))) # OPERATIONS definition
 orders = pd.DataFrame(order_rows)
 
 # ---------------------------------------------------------------- dispatch
@@ -309,12 +355,22 @@ for _ in range(1400):
 interactions = pd.DataFrame(inter).sort_values("ts")
 
 # ---------------------------------------------------------------- plan
+# Plan is stated per CALENDAR month but stamped with the fiscal coordinates the
+# materiality gate resolves against, so "1.5% of period plan" means 1.5% of the
+# fiscal period the window actually falls in.
 plan_rows = []
 for r in REGIONS:
     base = orders[orders.region == r].groupby("order_date").net_revenue.sum().mean()
-    for m in range(1, 9):
-        plan_rows.append(dict(region=r, year=2026, month=m,
-                              plan_net_revenue=round(base * 30.4 * 1.04, 2)))
+    for m in range(1, 13):
+        first = date(2026, m, 1)
+        days = (date(2026 + (m // 12), (m % 12) + 1, 1) - first).days
+        plan_rows.append(dict(
+            region=r, year=2026, month=m, days_in_month=days,
+            fiscal_year=FISCAL.fiscal_year(first),
+            fiscal_quarter=FISCAL.fiscal_quarter(first),
+            fiscal_month=FISCAL.fiscal_month(first),
+            fiscal_period=FISCAL.period_token(first, "quarter"),
+            plan_net_revenue=round(base * days * 1.04, 2)))
 plan = pd.DataFrame(plan_rows)
 
 # ---------------------------------------------------------------- persist
@@ -401,6 +457,11 @@ with open(os.path.join(OUT, "ground_truth.json"), "w") as f:
     json.dump(gt, f, indent=2, default=str)
 
 print("orders        %7d rows  %s .. %s" % (len(orders), orders.order_date.min(), orders.order_date.max()))
+print("              cities %d across %d regions; finance net Rs %.2f Cr, ops net Rs %.2f Cr"
+      % (orders.city.nunique(), orders.region.nunique(),
+         orders.net_revenue.sum() / 1e7, orders.net_revenue_ops.sum() / 1e7))
+print("plan          %7d rows  fiscal periods %s"
+      % (len(plan), ", ".join(sorted(plan.fiscal_period.unique()))))
 print("dispatch      %7d rows  %s .. %s  (STALE by design)" % (len(dispatch), dispatch.dispatch_date.min(), dispatch.dispatch_date.max()))
 print("interactions  %7d rows" % len(interactions))
 print("market_events %7d rows" % len(market))

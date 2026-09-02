@@ -6,11 +6,16 @@ Nothing else is computable. This is deliberately restrictive: it is what stops
 an LLM from inventing a metric definition, and it is where lineage, thresholds,
 materiality rules and access classes live.
 """
+import copy
 import os
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
+
+from . import kpi_reconciliation as KR
+from .fiscal import FiscalCalendar, from_contract as _fiscal_from_contract
+from .hierarchy import Hierarchy, HierarchyError
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG = os.path.join(ROOT, "config")
@@ -22,11 +27,96 @@ def _load(name: str) -> Dict[str, Any]:
 
 
 class Contract(object):
-    def __init__(self):
-        self.kpi = _load("kpi_contract.yaml")
+    """The semantic layer.
+
+    Three things are resolved HERE, once, and consumed everywhere else:
+
+      * the FISCAL CALENDAR, so no stage does its own Gregorian arithmetic where
+        a fiscal boundary is meant;
+      * the DIMENSIONAL HIERARCHIES, so `hierarchy: [region, city]` is traversed
+        rather than merely declared;
+      * COMPETING KPI DEFINITIONS, reconciled to one canonical definition before
+        any stage reads a KPI spec.
+
+    Definition selection is a pure function of configuration, so it is settled at
+    load time and every downstream stage sees a single, already-reconciled spec.
+    The only part that depends on the data - how far apart the definitions
+    actually are on a given window - is measured per run by the pipeline.
+    """
+
+    def __init__(self, kpi_config: Optional[Dict[str, Any]] = None):
+        self.kpi = copy.deepcopy(kpi_config) if kpi_config else _load("kpi_contract.yaml")
         self.graph = _load("causal_graph.yaml")
         self.entitlements = _load("entitlements.yaml")
         self.playbooks = _load("playbooks.yaml")
+        self.fiscal: FiscalCalendar = _fiscal_from_contract(self.kpi)
+        self._hierarchies: Dict[str, Hierarchy] = {}
+        for dim, spec in (self.kpi.get("dimensions") or {}).items():
+            if len(spec.get("hierarchy") or []) >= 2:
+                self._hierarchies[dim] = Hierarchy(dim, spec["hierarchy"],
+                                                   spec.get("members"))
+        self.reconciliations: Dict[str, Dict[str, Any]] = KR.reconcile_registry(self.kpi)
+        for name, rec in self.reconciliations.items():
+            if name in self.kpis:
+                KR.apply_to_kpi(self.kpis[name], rec,
+                                self.kpi["sources"][self.kpis[name]["source"]])
+
+    # -------------------------------------------------------------- calendar
+    def fiscal_period(self, d: date) -> Dict[str, Any]:
+        return self.fiscal.describe(d)
+
+    def fiscal_window(self, start: date, end: date) -> Dict[str, Any]:
+        return self.fiscal.describe_window(start, end)
+
+    def period_bounds(self, token: str) -> Tuple[date, date]:
+        """Resolve a fiscal period token ('FY2027-Q2') to inclusive dates."""
+        return self.fiscal.period_bounds(token)
+
+    # ------------------------------------------------------------- hierarchy
+    def hierarchies(self) -> Dict[str, Hierarchy]:
+        return self._hierarchies
+
+    def hierarchy(self, dimension: str = "region") -> Hierarchy:
+        h = self._hierarchies.get(dimension)
+        if h is None:
+            raise HierarchyError(
+                "%r declares no hierarchy in the contract. Dimensions with one: %s"
+                % (dimension, ", ".join(sorted(self._hierarchies)) or "(none)"))
+        return h
+
+    def level_of(self, value: str, dimension: str = "region") -> Optional[str]:
+        """Which level of the hierarchy a value belongs to, or None."""
+        h = self.hierarchy(dimension)
+        if value in h.members:
+            return h.root
+        return h.leaf if h.parent_of(value) else None
+
+    # ------------------------------------------------------------ definition
+    def reconciliation(self, kpi: str) -> Optional[Dict[str, Any]]:
+        return self.reconciliations.get(kpi)
+
+    def definition_status(self, kpi: str) -> str:
+        rec = self.reconciliations.get(kpi)
+        return rec["status"] if rec else KR.STATUS_SINGLE
+
+    def unresolved_definitions(self) -> List[str]:
+        return sorted(k for k, r in self.reconciliations.items()
+                      if r["status"] == KR.STATUS_UNRESOLVED)
+
+    def measure_column(self, kpi: str) -> str:
+        """The physical column implementing the RESOLVED definition.
+
+        Stages that need a single column rather than an aggregate expression -
+        the price/volume/mix identity, the DiD cohort series - ask here instead
+        of hard-coding `net_revenue`, so a change of authoritative definition
+        actually reaches them.
+        """
+        spec = self.get_kpi(kpi)
+        col = (spec.get("aggregation") or {}).get("column")
+        if not col:
+            raise KeyError("%s declares no materialised column; it must be computed "
+                           "through its aggregation expression" % kpi)
+        return col
 
     # ------------------------------------------------------------------ kpis
     @property

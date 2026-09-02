@@ -22,13 +22,41 @@ GEN = os.path.join(ROOT, "data", "generated")
 
 
 class Estate(object):
-    def __init__(self, contract: Contract, now: Optional[datetime] = None):
+    """Read access to one estate.
+
+    ``db_path``/``gen_dir`` default to the production warehouse. They are
+    parameters rather than constants because the ML training corpus is built by
+    replaying the REAL engine over a historical estate (data/history.duckdb):
+    the features a model trains on must come from the same code that produces
+    them at inference time, or the evaluation is measuring a different system
+    than the one that ships.
+    """
+
+    def __init__(self, contract: Contract, now: Optional[datetime] = None,
+                 db_path: Optional[str] = None, gen_dir: Optional[str] = None):
         self.c = contract
         self.now = now or datetime(2026, 8, 31, 1, 0, 0)
-        if not os.path.exists(DB):
-            raise RuntimeError("warehouse not built - run: python data/generate.py")
-        self.con = duckdb.connect(DB, read_only=True)
+        self.db_path = db_path or DB
+        self.gen_dir = gen_dir or GEN
+        if not os.path.exists(self.db_path):
+            raise RuntimeError("warehouse not built at %s - run: python data/generate.py"
+                               % self.db_path)
+        self.con = duckdb.connect(self.db_path, read_only=True)
         self._interactions: Optional[List[Dict[str, Any]]] = None
+
+    # ------------------------------------------------------------- point in time
+    @property
+    def as_of(self) -> date:
+        """The last day the engine is allowed to see.
+
+        Point-in-time correctness. In production the estate ends at "now" anyway,
+        so this is a no-op - but the moment you replay a historical window (to
+        backtest, or to build the ML training corpus) an unbounded read lets the
+        engine use data that did not exist on the day the decision was made, and
+        every metric computed from it is optimistic. The cutoff is enforced here
+        rather than trusted to each caller.
+        """
+        return self.now.date()
 
     # ------------------------------------------------------------------ sql
     def sql(self, q: str, tel: Optional[Telemetry] = None, stage: str = "query",
@@ -47,7 +75,10 @@ class Estate(object):
         probes = {
             "orders":   "SELECT MAX(order_date) AS t FROM orders",
             "dispatch": "SELECT MAX(dispatch_date) AS t FROM dispatch",
-            "market":   "SELECT MAX(start_date) AS t FROM market_events WHERE start_date <= DATE '2026-08-31'",
+            # bounded by "now" so a forward-dated promo calendar does not read as
+            # fresher than the day the analysis is being run
+            "market":   ("SELECT MAX(start_date) AS t FROM market_events "
+                         "WHERE start_date <= DATE '%s'" % self.now.date()),
         }
         for src, q in probes.items():
             t = self.con.execute(q).fetchone()[0]
@@ -66,7 +97,7 @@ class Estate(object):
     # ---------------------------------------------------------- unstructured
     def interactions(self) -> List[Dict[str, Any]]:
         if self._interactions is None:
-            p = os.path.join(GEN, "interactions.jsonl")
+            p = os.path.join(self.gen_dir, "interactions.jsonl")
             with open(p) as f:
                 self._interactions = [json.loads(l) for l in f if l.strip()]
         return self._interactions
@@ -86,7 +117,7 @@ class Estate(object):
         df = self.sql(q + " ORDER BY 1", tel, "sift", "%s daily series" % kpi)
         df.columns = ["d", "v"]
         df["d"] = pd.to_datetime(df["d"])
-        return df
+        return df[df["d"] <= pd.Timestamp(self.as_of)].reset_index(drop=True)
 
     def _reorder_rate(self, persona: Persona, filters, tel) -> pd.DataFrame:
         """Distinct orders per enrolled account over a trailing 28 days, weekly.
@@ -127,7 +158,8 @@ class Estate(object):
         df = df[["d", "v"]]
         df.columns = ["d", "v"]
         df["d"] = pd.to_datetime(df["d"])
-        return df.dropna()
+        df = df[df["d"] <= pd.Timestamp(self.as_of)]
+        return df.dropna().reset_index(drop=True)
 
     # ------------------------------------------------------------ slice data
     def orders_slice(self, persona: Persona, start: date, end: date,

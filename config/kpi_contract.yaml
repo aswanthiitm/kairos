@@ -5,13 +5,42 @@
 # ---------------------------------------------------------------------------
 version: "1.3.0"
 owner: "Data & Analytics CoE"
-fiscal_calendar: "apr_mar"          # Indian FY: Apr 1 - Mar 31
 default_currency: "INR"
 timezone: "Asia/Kolkata"
+
+# ---------------------------------------------------------------------------
+# FISCAL CALENDAR
+# Consumed by whylayer/fiscal.py. Every fiscal boundary the engine resolves -
+# the plan period used by the materiality gate, the period label on a movement,
+# and any analysis requested as "FY2027-Q2" - comes from here. Changing the key
+# below changes those boundaries with no code change.
+#   start_month  the calendar month the fiscal year opens on
+#   year_label   'end'   -> FY named for the calendar year it CLOSES in
+#                'start' -> FY named for the calendar year it OPENS in
+# ---------------------------------------------------------------------------
+fiscal_calendar: "apr_mar"          # Indian FY: Apr 1 - Mar 31
+fiscal_calendars:
+  apr_mar:
+    label: "Indian fiscal year (April-March)"
+    start_month: 4
+    year_label: end                 # FY2026 = 2025-04-01 .. 2026-03-31
+    quarter_names: [Q1, Q2, Q3, Q4]
+  jan_dec:
+    label: "Calendar year (January-December)"
+    start_month: 1
+    year_label: start
+    quarter_names: [Q1, Q2, Q3, Q4]
+  jul_jun:
+    label: "July-June fiscal year"
+    start_month: 7
+    year_label: end
+    quarter_names: [Q1, Q2, Q3, Q4]
 
 sources:
   orders:
     system: "Warehouse (DuckDB table: orders)"
+    table: orders
+    date_column: order_date
     kind: structured
     grain: "order_line"
     refresh_cadence_minutes: 60
@@ -21,6 +50,8 @@ sources:
     contains_pii: false
   dispatch:
     system: "Ops / TMS export (CSV: dispatch_log.csv)"
+    table: dispatch
+    date_column: dispatch_date
     kind: structured
     grain: "shipment"
     refresh_cadence_minutes: 1440    # daily T+1
@@ -48,8 +79,23 @@ sources:
     lineage: "Nielsen extract + internal promo calendar"
     contains_pii: false
 
+# ---------------------------------------------------------------------------
+# DIMENSIONS
+# `hierarchy` is traversed at runtime by whylayer/hierarchy.py: roll-up
+# (city -> region), drill-down (region -> city) and level validation all read
+# `members` below. A level a source cannot resolve at its grain is refused, not
+# inferred - see `sliceable_by` on each KPI.
+# ---------------------------------------------------------------------------
 dimensions:
-  region:     {type: categorical, values: [North, South, East, West], hierarchy: [region, city]}
+  region:
+    type: categorical
+    values: [North, South, East, West]
+    hierarchy: [region, city]
+    members:                        # every city belongs to exactly one region
+      North: [Delhi, Jaipur, Lucknow, Chandigarh]
+      South: [Chennai, Bengaluru, Hyderabad, Kochi]
+      East:  [Kolkata, Bhubaneswar, Guwahati, Patna]
+      West:  [Mumbai, Pune, Ahmedabad, Surat]
   segment:    {type: categorical, values: [Enterprise, Mid-Market, SMB]}
   channel:    {type: categorical, values: [Direct, Distributor, ModernTrade, Ecommerce]}
   category:   {type: categorical, values: [Dairy, Staples, Snacks, Beverages, ColdPressedOils]}
@@ -66,12 +112,22 @@ kpis:
     source: orders
     sql: "SELECT order_date AS d, SUM(net_revenue) AS v FROM orders {where} GROUP BY 1"
     additive: true
+    # Rewritten at load time from the RESOLVED definition in kpi_definitions below.
+    aggregation: {kind: additive, expression: "SUM(net_revenue)", column: net_revenue}
     decomposition: "net_revenue = order_volume * asp"     # exact identity -> mix/rate algebra
     drivers: [order_volume, asp, tier_mix, channel_mix]
-    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
+    sliceable_by: [region, city, segment, channel, category, tier, warehouse_id, account]  # order-line grain carries city
     materiality:
       min_abs_inr: 2500000        # Rs 25 L - below this we do not wake anyone up
-      min_pct_of_plan: 0.015      # 1.5% of period plan
+      # RECALIBRATED when the fiscal calendar became real. This threshold is a
+      # share of the plan for the FISCAL PERIOD the window falls in, prorated by
+      # the days covered. It previously read 0.015 against a denominator that
+      # summed every plan row the filter matched and divided by a nominal 30.4-day
+      # month, so the effective bar was ~18% of period plan. Correcting the
+      # denominator without restating the threshold would have loosened the gate
+      # by roughly the number of months in the plan table. 8% is deliberately
+      # LOOSER than the old effective bar and materially tighter than 1.5%.
+      min_pct_of_plan: 0.08
       min_persistence_days: 3
     thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
     plan_column: plan_net_revenue
@@ -84,8 +140,9 @@ kpis:
     source: orders
     sql: "SELECT order_date AS d, SUM(units) AS v FROM orders {where} GROUP BY 1"
     additive: true
+    aggregation: {kind: additive, expression: "SUM(units)", column: units}
     drivers: [reorder_rate_28d, active_accounts, market_event]
-    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
+    sliceable_by: [region, city, segment, channel, category, tier, warehouse_id, account]  # order-line grain carries city
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.02, min_persistence_days: 3}
     thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
     access: {row_filter: region, column_sensitivity: internal}
@@ -97,8 +154,11 @@ kpis:
     source: orders
     sql: "SELECT order_date AS d, SUM(net_revenue)/NULLIF(SUM(units),0) AS v FROM orders {where} GROUP BY 1"
     additive: false               # ratio metric - never sum, always re-aggregate
+    # A roll-up of a ratio must re-divide the summed parts. Averaging child ASPs
+    # weights a city with ten orders the same as one with ten thousand.
+    aggregation: {kind: ratio, numerator: "SUM(net_revenue)", denominator: "SUM(units)"}
     drivers: [tier_mix, discount_pct, category_mix]
-    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
+    sliceable_by: [region, city, segment, channel, category, tier, warehouse_id, account]  # order-line grain carries city
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.01, min_persistence_days: 5}
     thresholds: {warn_sigma: 2.0, alert_sigma: 3.0}
     access: {row_filter: region, column_sensitivity: financial}
@@ -110,8 +170,13 @@ kpis:
     source: dispatch
     sql: "SELECT dispatch_date AS d, AVG(CASE WHEN on_time THEN 1.0 ELSE 0.0 END) AS v FROM dispatch {where} GROUP BY 1"
     additive: false
+    aggregation: {kind: ratio,
+                  numerator: "SUM(CASE WHEN on_time THEN 1.0 ELSE 0.0 END)",
+                  denominator: "COUNT(*)"}
     drivers: [warehouse, delay_reason]
-    sliceable_by: [region, warehouse_id]   # dimensions this KPI's source grain can resolve
+    sliceable_by: [region, warehouse_id]   # shipment grain: NO city key exists on the
+                                           # dispatch feed, so city is refused rather
+                                           # than inferred from the ordering account
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.03, min_persistence_days: 2}
     thresholds: {warn_sigma: 2.0, alert_sigma: 2.5}
     access: {row_filter: region, column_sensitivity: internal}
@@ -124,11 +189,92 @@ kpis:
     trailing_days: 28          # metric is a trailing aggregate - see coverage note below
     sql: "__derived__"            # computed in Python: window function over account order history
     additive: false
+    aggregation: {kind: derived, note: "trailing window function; not re-aggregable by SQL roll-up"}
     drivers: [otd_pct, asp, service_tickets]
-    sliceable_by: [region, segment, channel, category, tier, warehouse_id, account]   # dimensions this KPI's source grain can resolve
+    sliceable_by: [region, city, segment, channel, category, tier, warehouse_id, account]  # order-line grain carries city
     materiality: {min_abs_inr: 0, min_pct_of_plan: 0.02, min_persistence_days: 7}
     thresholds: {warn_sigma: 2.0, alert_sigma: 2.5}
     access: {row_filter: region, column_sensitivity: internal}
+
+# ---------------------------------------------------------------------------
+# COMPETING KPI DEFINITIONS
+# Two systems, two defensible definitions of the same words. This is the normal
+# state of a real estate, and the engine's job is to RECONCILE rather than to
+# pick one quietly. Consumed by whylayer/kpi_reconciliation.py at contract load:
+# the winning definition rewrites the KPI's aggregation, the losing one is kept
+# with the reason it lost, and the numeric gap is measured per run.
+#
+#   resolution.rule = authority_precedence  -> first source in `precedence` wins
+#   resolution.rule = none / omitted        -> UNRESOLVED; the engine abstains
+#                                              rather than choosing for you
+# ---------------------------------------------------------------------------
+kpi_definitions:
+
+  net_revenue:
+    semantic_kpi: net_revenue
+    description: "Revenue recognised on booked orders, net of trade terms."
+    resolution:
+      rule: authority_precedence
+      precedence: [finance, operations]
+      rationale: "The Group Controller owns external revenue recognition; the ops
+                  contribution view is a management cut and is not the book of record."
+    definitions:
+      finance:
+        system: "Finance ledger (ERP GL)"
+        owner: "Group Controller"
+        authority: statutory
+        effective_from: "2024-04-01"
+        formula: "gross_sales - discounts - returns"
+        expression: "SUM(gross_revenue) - SUM(discount_amount) - SUM(returns_amount)"
+        column: net_revenue                # materialised equivalent of the formula
+        unit: INR
+        grain: order_line
+        scope: "all booked order lines; freight recovery is reported separately"
+        source: orders
+      operations:
+        system: "Ops margin cube"
+        owner: "Head of Supply Chain Finance"
+        authority: management
+        effective_from: "2025-01-01"
+        formula: "gross_sales - discounts - returns - shipping"
+        expression: "SUM(gross_revenue) - SUM(discount_amount) - SUM(returns_amount) - SUM(shipping_cost)"
+        column: net_revenue_ops
+        unit: INR
+        grain: order_line
+        scope: "contribution view; outbound freight is expensed against revenue"
+        source: orders
+
+  order_volume:
+    semantic_kpi: order_volume
+    description: "Units shipped against booked orders."
+    resolution:
+      rule: authority_precedence
+      precedence: [finance, operations]
+    definitions:
+      finance:
+        system: "Finance ledger (ERP GL)"
+        owner: "Group Controller"
+        authority: statutory
+        effective_from: "2024-04-01"
+        formula: "sum of order line units"
+        expression: "SUM(units)"
+        column: units
+        unit: units
+        grain: order_line
+        scope: "all booked order lines"
+        source: orders
+      operations:
+        system: "Ops margin cube"
+        owner: "Head of Supply Chain Finance"
+        authority: management
+        effective_from: "2025-01-01"
+        formula: "sum of order line units"
+        expression: "SUM(units)"
+        column: units
+        unit: units
+        grain: order_line
+        scope: "all booked order lines"
+        source: orders
 
 # Business levers the engine is allowed to recommend. An action that does not
 # map to a lever here is not emitted - this is what keeps recommendations
