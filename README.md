@@ -14,12 +14,12 @@ Built for the **Accenture Innovation Challenge 2026 · BusinessIntelligence.ai**
 
 ## Demo
 
-<video src="https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4" controls muted playsinline width="900"></video>
+[![KAIRÓS — click to watch the narrated walkthrough](docs/media/demo-preview.gif)](https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4)
 
-[![KAIRÓS demo](docs/media/demo-preview.gif)](https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4)
+### ▶ [Watch the full walkthrough — 2:52, with narration](https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4)
 
-**▶ [Watch the full 2:52 narrated walkthrough](https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4)** — with audio.
-The loop above is silent and shows six moments from it.
+The loop above is silent and shows six moments from it. Click either to play the
+narrated version.
 
 The walkthrough covers the live estate, a confirmed finding at the top of the evidence
 ladder, the abstention that prices its own separating test, the data-quality catch, the
