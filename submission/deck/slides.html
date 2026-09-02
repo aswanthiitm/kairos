@@ -1,0 +1,353 @@
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+@font-face{font-family:Nohemi;font-weight:400;src:url('../../app/static/fonts/Nohemi-Regular.woff2') format('woff2')}
+@font-face{font-family:Nohemi;font-weight:500;src:url('../../app/static/fonts/Nohemi-Medium.woff2') format('woff2')}
+@font-face{font-family:Nohemi;font-weight:600;src:url('../../app/static/fonts/Nohemi-SemiBold.woff2') format('woff2')}
+@font-face{font-family:Nohemi;font-weight:700;src:url('../../app/static/fonts/Nohemi-Bold.woff2') format('woff2')}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#888;font-family:Nohemi,Helvetica,Arial,sans-serif;color:#1A1A1A}
+.s{width:1280px;height:720px;background:#fff;position:relative;overflow:hidden;margin-bottom:20px}
+.hd{height:62px;border-bottom:1px solid #E4E0EA;display:flex;align-items:center;padding:0 44px;gap:13px}
+.mk{width:15px;height:15px;border:2px solid #A100FF;position:relative;flex:none}
+.mk::after{content:"";position:absolute;left:3.5px;top:3.5px;width:5px;height:5px;background:#A100FF}
+.hd h2{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.hd .pg{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:10px;color:#8A8A96;letter-spacing:.12em}
+.bd{padding:26px 44px 0;height:658px}
+.lb{font-family:"JetBrains Mono",monospace;font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:#8A8A96}
+.pr{font-family:"Source Serif 4",Georgia,serif;font-size:16px;line-height:1.52;color:#3A3A45}
+.mn{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+.big{font-family:Nohemi;font-weight:700;letter-spacing:-.03em}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-family:"JetBrains Mono",monospace;font-size:8.5px;letter-spacing:.13em;
+ text-transform:uppercase;color:#8A8A96;font-weight:400;padding:7px 9px;border-bottom:1px solid #C9C3D2;background:#F7F5FA}
+td{padding:7px 9px;border-bottom:1px solid #EDEAF1;color:#3A3A45;vertical-align:top;line-height:1.42}
+.p{color:#A100FF}.g{color:#1F7A4C}.a{color:#B07C00}.r{color:#C0392B}.bl{color:#224BFF}
+.chip{font-family:"JetBrains Mono",monospace;font-size:9px;letter-spacing:.08em;padding:2px 7px;color:#fff}
+.foot{position:absolute;bottom:16px;left:44px;right:44px;display:flex;justify-content:space-between;
+ font-family:"JetBrains Mono",monospace;font-size:9px;color:#A9A5B2}
+</style>
+
+<!-- 1 · PROBLEM -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>Describe the problem statement</h2><span class="pg">KAIRÓS · 01</span></div>
+<div class="bd" style="display:flex;gap:36px;align-items:stretch">
+ <div style="width:640px">
+  <p class="pr" style="margin-bottom:13px">Enterprises have solved metric <b>detection</b> and left metric <b>explanation</b> unautomated. A dashboard says North revenue fell 18.8%. It cannot say the fall is three enterprise accounts that stopped reordering after a warehouse missed its dispatch SLA ten days earlier — because that sentence lives in service tickets, call transcripts and a dispatch log no BI tool reads.</p>
+  <p class="pr" style="margin-bottom:13px">Three structural failures keep the translation manual. <b>Noise blindness:</b> anomaly tools alert on deviation, not consequence. <b>Correlation theatre:</b> “insight” features surface what moved alongside a metric, and fluent prose makes a weak correlation read as settled. <b>Organisational amnesia:</b> the company solved this pattern fourteen months ago and that memory sits in a dead slide.</p>
+  <p class="pr">The measurable consequence is <b>decision latency</b>, not data latency. Pipelines refresh hourly; the explanation refreshes weekly. And the binding obstacle is not modelling — across twenty organisations, data quality was the only barrier every respondent named.</p>
+  <div class="lb" style="margin-top:15px">198 words</div>
+ </div>
+ <div style="flex:1">
+  <div style="background:#F7F5FA;padding:20px;margin-bottom:14px">
+   <div class="big" style="font-size:56px;color:#C0392B">3–5</div>
+   <div style="font-size:13px;color:#3A3A45;line-height:1.4;margin-top:4px">days for an analyst to turn a movement into a cause</div>
+  </div>
+  <div class="lb" style="margin-bottom:9px">Barriers, of 20 organisations</div>
+  <table><tbody>
+   <tr><td><b>Data availability &amp; quality</b></td><td class="mn r" style="text-align:right"><b>20</b></td></tr>
+   <tr><td>Integrating diverse sources</td><td class="mn" style="text-align:right">18</td></tr>
+   <tr><td>Implementation cost</td><td class="mn" style="text-align:right">15</td></tr>
+   <tr><td>Shortage of specialists</td><td class="mn" style="text-align:right">12</td></tr>
+   <tr><td>Integration with existing BI</td><td class="mn" style="text-align:right">11</td></tr>
+   <tr><td>Security and regulation</td><td class="mn" style="text-align:right">10</td></tr>
+  </tbody></table>
+  <div class="lb" style="margin-top:10px;text-transform:none;letter-spacing:0;font-size:10px">Olszak &amp; Bartuś, Procedia CS 270 (2025)</div>
+ </div>
+</div>
+<div style="position:absolute;left:44px;right:44px;bottom:52px">
+ <div class="lb" style="margin-bottom:10px">Where the days go today</div>
+ <div style="display:flex;gap:2px;height:34px;margin-bottom:7px">
+  <div style="width:9%;background:#1F7A4C;display:flex;align-items:center;padding-left:9px"><span class="mn" style="font-size:10px;color:#fff">pipeline 1h</span></div>
+  <div style="width:22%;background:#EDEAF1;display:flex;align-items:center;padding-left:9px"><span class="mn" style="font-size:10px;color:#5A5A66">someone notices</span></div>
+  <div style="width:38%;background:#E4DCEE;display:flex;align-items:center;padding-left:9px"><span class="mn" style="font-size:10px;color:#3A3A45">an analyst pulls the numbers, reads the tickets, builds the case</span></div>
+  <div style="width:19%;background:#C9C3D2;display:flex;align-items:center;padding-left:9px"><span class="mn" style="font-size:10px;color:#3A3A45">review cycle</span></div>
+  <div style="width:12%;background:#C0392B;display:flex;align-items:center;padding-left:9px"><span class="mn" style="font-size:10px;color:#fff">action</span></div>
+ </div>
+ <div class="pr" style="font-size:13px;color:#5A5A66">The data was ready in an hour. Everything after it is the explanation gap — and it is the only part nobody has automated.</div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>01</span></div></div>
+
+<!-- 2 · SOLUTION -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>Proposed solution</h2><span class="pg">KAIRÓS · 02</span></div>
+<div class="bd" style="display:flex;gap:36px;align-items:stretch">
+ <div style="width:640px">
+  <p class="pr" style="margin-bottom:13px"><b>KAIRÓS</b> — the opportune moment — is an explanation layer that sits on top of the BI stack a client already owns. It detects a material movement, decomposes it exactly, grades every explanation against a standard of proof, and recommends an action with a named owner. Or it refuses, and prices the cheapest experiment that would settle the question.</p>
+  <p class="pr" style="margin-bottom:13px">The architecture rests on one commitment: language models are strong at <b>proposing</b> causal explanations and near-random at <b>inferring</b> causation from correlation. So the model proposes and phrases — it never decides and never computes. That is enforced at runtime by a closed evidence packet and a numeric guard that rejects any figure absent from it.</p>
+  <p class="pr">Nothing below the second rung of the evidence ladder is ever phrased as a cause. When two explanations tie, KAIRÓS abstains and prices a separating test rather than guessing.</p>
+  <div class="lb" style="margin-top:15px">196 words</div>
+ </div>
+ <div style="flex:1">
+  <div class="lb" style="margin-bottom:10px">What it will not do</div>
+  <table><tbody>
+   <tr><td>Wake anyone for an immaterial move</td></tr>
+   <tr><td>Leave a residual — the identity closes to &lt;₹1</td></tr>
+   <tr><td>Award the top rung when the placebo fails</td></tr>
+   <tr><td>Recommend a lever absent from the contract</td></tr>
+   <tr><td>Publish a number absent from the packet</td></tr>
+   <tr><td>Rebuild text-to-SQL or the semantic layer</td></tr>
+  </tbody></table>
+  <div style="background:#F5EEFF;padding:16px;margin-top:16px">
+   <div class="big" style="font-size:40px;color:#A100FF">91–100%</div>
+   <div style="font-size:12.5px;color:#3A3A45;line-height:1.45;margin-top:5px">of reasoning steps are non-LLM. The engine returns a complete answer with the model switched off entirely.</div>
+  </div>
+ </div>
+</div>
+<div style="position:absolute;left:44px;right:44px;bottom:52px">
+ <div class="lb" style="margin-bottom:10px">The pipeline, end to end</div>
+ <div style="display:flex;gap:3px;margin-bottom:8px">
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">SEMANTIC</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">whose definition</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">FITNESS</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">fit to reason over</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">DRIFT</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">has the ground moved</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">SIFT</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">real and material</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">SPLIT</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">where exactly</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">SOURCE</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">why, how sure</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">PROPAGATE</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">where loss forms</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">FORECAST</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">if nobody acts</div></div>
+  <div style="flex:1;background:#F5EEFF;padding:9px 10px;border-top:2px solid #A100FF"><div class="mn" style="font-size:9.5px;color:#A100FF;font-weight:700">SOLVE</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">what to do</div></div>
+  <div style="flex:1;background:#FDF0EE;padding:9px 10px;border-top:2px solid #C0392B"><div class="mn" style="font-size:9.5px;color:#C0392B;font-weight:700">NARRATE</div><div style="font-size:10.5px;color:#3A3A45;margin-top:2px">say it, guarded</div></div>
+ </div>
+ <div class="pr" style="font-size:13px;color:#5A5A66">Only the last stage touches a language model — and a numeric guard checks its output against the evidence packet before anything is published.</div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>02</span></div></div>
+
+<!-- 3 · TEN STAGES -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>How it works — ten stages</h2><span class="pg">KAIRÓS · 03</span></div>
+<div class="bd">
+ <div class="lb" style="margin-bottom:14px">Each stage is defined as much by what it refuses to do as by what it computes</div>
+ <table><thead><tr><th style="width:112px">Stage</th><th style="width:210px">Question</th><th style="width:250px">Method</th><th>Refuses to</th></tr></thead><tbody>
+ <tr><td class="mn p"><b>SEMANTIC</b></td><td>Whose definition of this metric?</td><td class="mn" style="font-size:11px">Rules · SQL</td><td>Compute a KPI two systems define differently</td></tr>
+ <tr><td class="mn p"><b>FITNESS</b></td><td>Is this estate fit to reason over?</td><td class="mn" style="font-size:11px">Rules · SQL</td><td>Analyse an estate that fails the gate</td></tr>
+ <tr><td class="mn p"><b>DRIFT</b></td><td>Has the ground moved?</td><td class="mn" style="font-size:11px">Statistics · ML</td><td>Trust a ranker outside its training support</td></tr>
+ <tr><td class="mn p"><b>SIFT</b></td><td>Is the change real, and material?</td><td class="mn" style="font-size:11px">Statistics · Rules</td><td>Wake anyone for an immaterial move</td></tr>
+ <tr><td class="mn p"><b>SPLIT</b></td><td>Where exactly?</td><td class="mn" style="font-size:11px">Deterministic algebra</td><td>Leave an unexplained residual</td></tr>
+ <tr><td class="mn p"><b>SOURCE</b></td><td>Why, and how sure?</td><td class="mn" style="font-size:11px">Causal · Statistics · Retrieval · ML</td><td>Award L3 when the placebo test fails</td></tr>
+ <tr><td class="mn p"><b>PROPAGATE</b></td><td>Where is the loss created?</td><td class="mn" style="font-size:11px">Causal · SQL</td><td>Measure a cause in its effect’s window</td></tr>
+ <tr><td class="mn p"><b>FORECAST</b></td><td>What if nobody acts?</td><td class="mn" style="font-size:11px">Statistics</td><td>Voice an extrapolation as a counterfactual</td></tr>
+ <tr><td class="mn p"><b>SOLVE</b></td><td>What should someone do?</td><td class="mn" style="font-size:11px">Retrieval · Rules</td><td>Emit an action whose lever isn’t declared</td></tr>
+ <tr><td class="mn r"><b>NARRATE</b></td><td>How do we say it to this reader?</td><td class="mn r" style="font-size:11px">LLM · Deterministic</td><td>Publish a number absent from the packet</td></tr>
+ </tbody></table>
+ <div style="display:flex;gap:14px;margin-top:16px">
+  <div style="flex:1;background:#F7F5FA;padding:13px"><div class="mn" style="font-size:10px;color:#8A8A96">FOUR SOURCES</div><div style="font-size:12.5px;margin-top:4px">orders 60m · dispatch 1440m · CRM 15m · market weekly</div></div>
+  <div style="flex:1;background:#F7F5FA;padding:13px"><div class="mn" style="font-size:10px;color:#8A8A96">FIVE CONNECTED KPIs</div><div class="mn" style="font-size:11.5px;margin-top:4px">otd → reorder → volume → revenue ← asp</div></div>
+  <div style="flex:1;background:#F7F5FA;padding:13px"><div class="mn" style="font-size:10px;color:#8A8A96">GOVERNED BY CONTRACT</div><div style="font-size:12.5px;margin-top:4px">545 lines of YAML — no code change per client</div></div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>03</span></div></div>
+
+<!-- 4 · EVIDENCE LADDER -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>The standard of proof</h2><span class="pg">KAIRÓS · 04</span></div>
+<div class="bd" style="display:flex;gap:34px;align-items:stretch">
+ <div style="width:660px">
+  <div class="lb" style="margin-bottom:12px">Bradford Hill (1965) on Pearl’s causal hierarchy (2019) — nothing below L2 is called a cause</div>
+  <div style="display:flex;gap:12px;margin-bottom:11px"><div class="chip" style="background:#C9C3D2;color:#3A3A45">L0</div><div><b style="font-size:13.5px">Co-movement</b><div class="pr" style="font-size:13px">Two series moved together — never stated as a cause</div></div></div>
+  <div style="display:flex;gap:12px;margin-bottom:11px"><div class="chip" style="background:#C1A3FF;color:#2A2036">L1</div><div><b style="font-size:13.5px">Precedence + gradient</b><div class="pr" style="font-size:13px">Cause preceded effect within the graph’s declared lag, with a dose–response gradient</div></div></div>
+  <div style="display:flex;gap:12px;margin-bottom:11px"><div class="chip" style="background:#A100FF">L2</div><div><b style="font-size:13.5px">Independent corroboration</b><div class="pr" style="font-size:13px">Sources not sharing a pipeline agree, and conflicting evidence is under 40%</div></div></div>
+  <div style="display:flex;gap:12px;margin-bottom:16px"><div class="chip" style="background:#1F7A4C">L3</div><div><b style="font-size:13.5px">Counterfactual</b><div class="pr" style="font-size:13px">Difference-in-differences against a real untreated cohort, placebo must validate first</div></div></div>
+  <div class="lb" style="margin-bottom:8px">Conflict is measured, not assumed</div>
+  <table><thead><tr><th>Case</th><th style="text-align:right">On-theme</th><th style="text-align:right">Conflicting</th><th style="text-align:right">Ratio</th><th>Verdict</th></tr></thead><tbody>
+   <tr><td>Dispatch SLA</td><td class="mn" style="text-align:right">12</td><td class="mn" style="text-align:right">0</td><td class="mn" style="text-align:right">0.00</td><td class="g"><b>corroborated → L3</b></td></tr>
+   <tr><td>Price increase</td><td class="mn" style="text-align:right">2</td><td class="mn" style="text-align:right">10</td><td class="mn r" style="text-align:right"><b>0.83</b></td><td class="r"><b>contested — rung suppressed</b></td></tr>
+  </tbody></table>
+  <div class="lb" style="margin:16px 0 8px">Six verdicts, each with a different downstream behaviour</div>
+  <table><tbody>
+   <tr><td style="width:180px" class="mn g"><b>CONFIRMED</b></td><td>a cause reached L2 or better on a validated design</td></tr>
+   <tr><td class="mn a"><b>COMPETING</b></td><td>rivals tie — the engine prices the test that separates them</td></tr>
+   <tr><td class="mn a"><b>UNKNOWN</b></td><td>nothing cleared the L2 floor; stating a cause would be a guess</td></tr>
+   <tr><td class="mn bl"><b>INSUFFICIENT_HISTORY</b></td><td>the series cannot support a seasonal baseline</td></tr>
+   <tr><td class="mn r"><b>DATA_QUALITY</b></td><td>an instrumentation defect explains the movement</td></tr>
+   <tr><td class="mn p"><b>ENTITLEMENT_DENIED</b></td><td>refused before execution — the query never ran</td></tr>
+  </tbody></table>
+ </div>
+ <div style="flex:1">
+  <div style="background:#1A1A1A;color:#fff;padding:22px;height:100%">
+   <div class="mn" style="font-size:9.5px;letter-spacing:.14em;color:#B9A9CE">WHEN IT CANNOT TELL</div>
+   <div style="font-family:'Source Serif 4',Georgia,serif;font-size:20px;line-height:1.32;margin:12px 0 10px">Is the fall ours, or theirs?</div>
+   <div class="pr" style="color:#C9C3D2;font-size:13px;margin-bottom:16px">Two explanations began the same day in the same channel, and no untreated cohort survives. Naming one would be a guess.</div>
+   <div style="border-top:1px solid #3A3345;border-bottom:1px solid #3A3345;display:flex;padding:12px 0;margin-bottom:14px">
+    <div style="flex:1"><div class="mn" style="font-size:9px;color:#8A8A96">COST</div><div class="big mn" style="font-size:22px">₹1.8 L</div></div>
+    <div style="flex:1"><div class="mn" style="font-size:9px;color:#8A8A96">ANSWER IN</div><div class="big mn" style="font-size:22px">14 d</div></div>
+    <div style="flex:1"><div class="mn" style="font-size:9px;color:#8A8A96">OWNER</div><div class="mn" style="font-size:14px;padding-top:6px">CFO</div></div>
+   </div>
+   <div class="pr" style="color:#C9C3D2;font-size:12.5px">A two-week price test in six matched outlets. A price effect responds to our own change; a competitor promotion does not. <b style="color:#fff">Either result is actionable.</b></div>
+  </div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>04</span></div></div>
+
+<!-- 5 · LLM vs NON-LLM -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>LLM versus non-LLM</h2><span class="pg">KAIRÓS · 05</span></div>
+<div class="bd" style="display:flex;gap:34px;align-items:stretch">
+ <div style="width:600px">
+  <div style="background:#F5EEFF;padding:20px;margin-bottom:16px">
+   <div class="pr" style="font-size:16.5px;font-style:italic;line-height:1.45">Language models are strong at <b>proposing</b> causal explanations and near-random at <b>inferring</b> causation from correlation. So the model proposes and phrases. It never decides, and it never computes.</div>
+  </div>
+  <p class="pr" style="font-size:14px;margin-bottom:14px">Kıcıman et al. (TMLR 2024) found LLMs beat existing algorithms on knowledge-based causal tasks. Corr2Cause (ICLR 2024) tested seventeen models on inferring causation from correlation and found them near random. Both are true — the architecture reads where the split falls.</p>
+  <div class="lb" style="margin-bottom:9px">Enforced at runtime, not asserted</div>
+  <table><tbody>
+   <tr><td style="width:180px"><b>Closed evidence packet</b></td><td>No tools, no data access — it cannot compute even if asked</td></tr>
+   <tr><td><b>Numeric guard</b></td><td>Every figure parsed and matched; an unverifiable number fails the narrative, retries once, then falls back</td></tr>
+   <tr><td><b>Method ledger</b></td><td>Every step declares its method and why that method was chosen</td></tr>
+  </tbody></table>
+ </div>
+ <div style="flex:1">
+  <div class="lb" style="margin-bottom:11px">Method mix on one live run</div>
+  <div style="margin-bottom:14px">
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">SQL</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:100%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>28</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">RULES</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:36%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>10</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">STATISTICS</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:14%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>4</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">DETERMINISTIC</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:14%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>4</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">RETRIEVAL</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:11%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>3</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">CAUSAL</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:7%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>2</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px"><span class="mn" style="width:104px;font-size:11px">ML</span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:7%;height:12px;background:#A100FF"></div></div><span class="mn" style="width:20px;text-align:right;font-size:11px"><b>2</b></span></div>
+   <div style="display:flex;align-items:center;gap:9px"><span class="mn r" style="width:104px;font-size:11px"><b>LLM</b></span><div style="flex:1;height:12px;background:#EDEAF1"><div style="width:4%;height:12px;background:#C0392B"></div></div><span class="mn r" style="width:20px;text-align:right;font-size:11px"><b>1</b></span></div>
+  </div>
+  <div style="background:#F7F5FA;padding:15px">
+   <div class="mn" style="font-size:10px;color:#8A8A96;margin-bottom:5px">THE GUARD, FIRING</div>
+   <div class="mn" style="font-size:11px;line-height:1.7;color:#3A3A45">model wrote &nbsp;<span class="r">“₹4.2 Cr of exposure”</span><br>guard &nbsp;→&nbsp; 4.2 not in packet<br>narrative &nbsp;→&nbsp; <span class="r">FAILED</span>, retried, failed<br>published &nbsp;→&nbsp; <span class="g">deterministic version</span></div>
+  </div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>05</span></div></div>
+
+<!-- 6 · WHAT IT DEMONSTRATES -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>What the prototype demonstrates</h2><span class="pg">KAIRÓS · 06</span></div>
+<div class="bd">
+ <div class="lb" style="margin-bottom:13px">Five cases with ground truth planted in the generator, so the engine is scored rather than admired</div>
+ <table><thead><tr><th style="width:36px"></th><th style="width:210px">Case</th><th>What was planted</th><th style="width:190px">Verdict</th></tr></thead><tbody>
+ <tr><td class="mn p"><b>S1</b></td><td>North revenue −18.8%</td><td>WH-3 dispatch SLA collapse → three named accounts cut reorder cadence at a 10-day lag, plus a tier-mix shift</td><td class="mn g"><b>CONFIRMED · L3</b></td></tr>
+ <tr><td class="mn p"><b>S2</b></td><td>West volume −8.9%</td><td>A competitor promotion and our own price rise — same day, same channel, no clean control</td><td class="mn a"><b>COMPETING</b></td></tr>
+ <tr><td class="mn p"><b>S3</b></td><td>New category, 19 days</td><td>Too short a series to fit seasonality</td><td class="mn bl"><b>INSUFFICIENT HISTORY</b></td></tr>
+ <tr><td class="mn p"><b>S4</b></td><td>WH-4 delivery “improves”</td><td>Late-shipment rows silently stopped loading</td><td class="mn r"><b>DATA QUALITY</b></td></tr>
+ <tr><td class="mn p"><b>S6</b></td><td>South modern trade −18.9%</td><td>Competitor promotion hitting one channel only — the others are an untreated control</td><td class="mn g"><b>CONFIRMED · L3</b></td></tr>
+ </tbody></table>
+ <div style="display:flex;gap:16px;margin-top:18px">
+  <div style="flex:1.55">
+   <div class="lb" style="margin-bottom:8px">S1 — recovered exactly what was buried</div>
+   <div class="pr" style="font-size:13.5px">DiD <b>−20.6%, p&lt;0.0001</b>, placebo clean. Named all three accounts. Split the 87.6% volume driver from the mix driver with an identity that closes to under ₹1 — and independently rediscovered the 10-day mechanism lag it was given in the causal graph.</div>
+  </div>
+  <div style="flex:1">
+   <div class="lb" style="margin-bottom:8px">S2 and S6 are deliberate mirrors</div>
+   <div class="pr" style="font-size:13.5px">The same class of external cause: one confounded by design, one with a clean cross-channel control. The pair is what makes the abstention read as judgement rather than weakness.</div>
+  </div>
+  <div style="width:190px;background:#F5EEFF;padding:15px">
+   <div class="big" style="font-size:38px;color:#A100FF">125</div>
+   <div style="font-size:12px;color:#3A3A45;line-height:1.4;margin-top:4px">tests assert these against the ground-truth file</div>
+  </div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>06</span></div></div>
+
+<!-- 7 · GOVERNANCE -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>Governance — entitlements and decision rights</h2><span class="pg">KAIRÓS · 07</span></div>
+<div class="bd" style="display:flex;gap:30px;align-items:stretch">
+ <div style="flex:1">
+  <div class="lb" style="margin-bottom:10px">Enforced on the data, before anything reaches a prompt</div>
+  <table><thead><tr><th style="width:110px">Persona</th><th>What they see on the same movement</th></tr></thead><tbody>
+   <tr><td><b>CFO</b></td><td>All regions, no CRM verbatims. Still reaches L3 on the counterfactual; 23 items withheld</td></tr>
+   <tr><td><b>RSM North</b></td><td class="r">region = North. A West query is refused <b>before any SQL runs</b></td></tr>
+   <tr><td><b>Supply Chain</b></td><td>No rupee column at all — the evidence packet holds no currency figure anywhere</td></tr>
+   <tr><td><b>Analyst</b></td><td>Full method detail and lineage</td></tr>
+  </tbody></table>
+  <div class="pr" style="font-size:13px;margin-top:12px;color:#5A5A66">Post-filtering generated text is not a control an auditor accepts: a model that has seen a number will leak it. Row filters compile into SQL, denied measures are stripped from the packet, and PII is redacted before retrieval.</div>
+ </div>
+ <div style="flex:1">
+  <div class="lb" style="margin-bottom:10px">Human–AI mode is derived, not configured</div>
+  <table><thead><tr><th>Recommendation</th><th style="width:180px">Mode</th></tr></thead><tbody>
+   <tr><td>Counter-promotion, ₹0.7 L</td><td class="g">AI-led, human approves</td></tr>
+   <tr><td>Service credit, ₹44.6 L</td><td class="a">Human-led — exceeds the RSM’s ₹25 L limit</td></tr>
+   <tr><td>Price correction</td><td class="a">Human-led — hard to reverse</td></tr>
+   <tr><td>Under abstention</td><td class="bl">Human only, AI abstains</td></tr>
+   <tr><td class="mn" style="color:#A9A5B2">—</td><td class="r"><b>AI-delegated: reserved, never assigned</b></td></tr>
+  </tbody></table>
+  <div style="background:#F7F5FA;padding:14px;margin-top:12px">
+   <div class="pr" style="font-size:13px">Every lever is externally visible to a customer, moves money, or both. Full machine delegation is left empty on purpose — which makes <b>EU AI Act Art. 14 human oversight</b> an inspectable property of each recommendation rather than a policy sentence.</div>
+  </div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>07</span></div></div>
+
+<!-- 8 · BUSINESS CASE -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>Business case</h2><span class="pg">KAIRÓS · 08</span></div>
+<div class="bd">
+ <div style="display:flex;gap:13px;margin-bottom:18px">
+  <div style="flex:1;background:#F7F5FA;padding:15px"><div class="big mn" style="font-size:26px;color:#A100FF">≈450 ms</div><div style="font-size:12px;color:#3A3A45;margin-top:3px">end to end, offline</div></div>
+  <div style="flex:1;background:#F7F5FA;padding:15px"><div class="big mn" style="font-size:26px;color:#A100FF">≈80 ms</div><div style="font-size:12px;color:#3A3A45;margin-top:3px">repeat run — cache hit, zero tokens</div></div>
+  <div style="flex:1;background:#F7F5FA;padding:15px"><div class="big mn" style="font-size:26px;color:#A100FF">₹0.30</div><div style="font-size:12px;color:#3A3A45;margin-top:3px">per insight, one model call</div></div>
+  <div style="flex:1;background:#F7F5FA;padding:15px"><div class="big mn" style="font-size:26px;color:#A100FF">1.9–3.2 ms</div><div style="font-size:12px;color:#3A3A45;margin-top:3px">core queries at 4.5M rows</div></div>
+ </div>
+ <table><thead><tr><th style="width:190px">Lever</th><th style="width:300px">Mechanism</th><th>Basis in the prototype</th></tr></thead><tbody>
+  <tr><td><b>Recovered leakage</b></td><td>Acting in week 1 rather than week 2 on service-driven churn</td><td>S1: ₹2.15 Cr movement, 87.6% attributable, playbook recovery 71% measured</td></tr>
+  <tr><td><b>Analyst capacity</b></td><td>“Why did X move” fire-drills automated</td><td>Each incident is 2–4 analyst days today</td></tr>
+  <tr><td><b>Avoided wrong actions</b></td><td>Abstention prevents intervening on the wrong cause</td><td>S2: two rivals both at L1 — a confident engine would have picked one</td></tr>
+  <tr><td><b>Compounding memory</b></td><td>Effect sizes re-estimated from realised outcomes</td><td>Playbook accuracy improves with every closed loop</td></tr>
+ </tbody></table>
+ <div style="display:flex;gap:16px;margin-top:16px">
+  <div style="flex:1.4">
+   <div class="lb" style="margin-bottom:7px">Measured on, deliberately</div>
+   <div class="pr" style="font-size:13.5px">Diagnosis precision, decision latency and recommendation calibration — <b>not insight volume</b>, which is the metric that manufactures alert fatigue.</div>
+  </div>
+  <div style="flex:1">
+   <div class="lb" style="margin-bottom:7px">Why it is defensible</div>
+   <div class="pr" style="font-size:13.5px">The causal graph and playbook library are built from the client’s own history. A generic model cannot copy them, and they strengthen with every incident.</div>
+  </div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>08</span></div></div>
+
+<!-- 9 · ROADMAP -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>Phased roadmap</h2><span class="pg">KAIRÓS · 09</span></div>
+<div class="bd">
+ <div class="lb" style="margin-bottom:16px">Scope expands only after analyst-graded precision clears the bar</div>
+ <div style="display:flex;gap:0">
+  <div style="flex:1;border-top:3px solid #A100FF;padding:14px 18px 0 0">
+   <div class="mn" style="font-size:10px;color:#A100FF;letter-spacing:.12em">PHASE 1 · 0–3 MONTHS</div>
+   <div style="font-size:15px;font-weight:600;margin:6px 0 8px">Prove precision</div>
+   <div class="pr" style="font-size:13px">One P&amp;L metric, one function. Semantic, fitness, sift and split on the existing layer. Narratives reviewed, never auto-published.</div>
+   <div class="pr" style="font-size:12.5px;color:#A100FF;margin-top:9px"><b>Exit</b> — analyst-graded precision clears the agreed bar</div>
+  </div>
+  <div style="flex:1;border-top:3px solid #C1A3FF;padding:14px 18px 0"">
+   <div class="mn" style="font-size:10px;color:#8A8A96;letter-spacing:.12em">PHASE 2 · 3–6 MONTHS</div>
+   <div style="font-size:15px;font-weight:600;margin:6px 0 8px">Add evidence and memory</div>
+   <div class="pr" style="font-size:13px">Connect unstructured sources with entitlements and redaction. Seed playbooks from past incidents. Enable the ladder and abstention.</div>
+   <div class="pr" style="font-size:12.5px;color:#8A8A96;margin-top:9px"><b>Exit</b> — ≥60% of material movements reach L2 or better</div>
+  </div>
+  <div style="flex:1;border-top:3px solid #E6DCFF;padding:14px 18px 0">
+   <div class="mn" style="font-size:10px;color:#8A8A96;letter-spacing:.12em">PHASE 3 · 6–12 MONTHS</div>
+   <div style="font-size:15px;font-weight:600;margin:6px 0 8px">Close the loop</div>
+   <div class="pr" style="font-size:13px">Multi-KPI, multi-persona, outcome logging, the ranker trained on the client’s resolved episodes. Recommendations stay proposed.</div>
+   <div class="pr" style="font-size:12.5px;color:#8A8A96;margin-top:9px"><b>Exit</b> — recommendation calibration measurable</div>
+  </div>
+  <div style="flex:1;border-top:3px solid #EDEAF1;padding:14px 0 0 18px">
+   <div class="mn" style="font-size:10px;color:#8A8A96;letter-spacing:.12em">PHASE 4 · 12 MONTHS +</div>
+   <div style="font-size:15px;font-weight:600;margin:6px 0 8px">Productise</div>
+   <div class="pr" style="font-size:13px">Industry-tuned causal graph and playbook packs, packaged as a delivery accelerator rather than a one-off build.</div>
+   <div class="pr" style="font-size:12.5px;color:#8A8A96;margin-top:9px"><b>Exit</b> — reuse across engagements</div>
+  </div>
+ </div>
+ <div style="background:#F5EEFF;padding:16px;margin-top:22px">
+  <div class="pr" style="font-size:14px"><b>Precision is the only gate.</b> Nothing about phase 2 begins until an analyst blind-grading diagnoses says the engine is right often enough to be worth reading. That ordering is what separates this from a pilot that ships insight volume and is quietly muted six weeks later.</div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>09</span></div></div>
+
+<!-- 10 · RISK -->
+<div class="s"><div class="hd"><div class="mk"></div><h2>Risk and mitigation</h2><span class="pg">KAIRÓS · 10</span></div>
+<div class="bd">
+ <div class="lb" style="margin-bottom:13px">Each mitigation is built into the engine, not bolted on afterwards</div>
+ <table><thead><tr><th style="width:210px">Risk</th><th>Mitigation</th></tr></thead><tbody>
+  <tr><td><b>Confident but wrong</b></td><td>L2 evidence floor; an explicit Unknown state; mandatory citation; the numeric guard rejects unverifiable figures</td></tr>
+  <tr><td><b>Spurious causes</b></td><td>The curated causal graph blocks inadmissible mechanisms; the placebo must validate before the top rung is awarded</td></tr>
+  <tr><td><b>Poor data quality</b></td><td>A fitness gate runs first across five dimensions and may halt the run; class-level completeness catches a load that drops one kind of row while totals hold</td></tr>
+  <tr><td><b>The ground moves</b></td><td>Drift monitored separately for data and model; a ranker scoring outside its training support has its authority withdrawn for that run</td></tr>
+  <tr><td><b>Definitional disputes</b></td><td>Competing KPI definitions reconciled once, before analysis, with the resolution, the authority and the gap recorded</td></tr>
+  <tr><td><b>Over-trust</b></td><td>Rival hypotheses shown by default; actions stay proposed; full machine delegation reserved and never assigned</td></tr>
+  <tr><td><b>Sensitive evidence</b></td><td>Row, column and domain entitlements applied before prompt assembly; PII redacted pre-retrieval; withheld items surfaced as a count</td></tr>
+  <tr><td><b>Regulatory</b></td><td>Art. 12 post-hoc reconstruction satisfied by full lineage; Art. 14 oversight by never auto-executing; India’s DPDP makes purpose limitation on call data a design constraint</td></tr>
+  <tr><td><b>Platform commoditisation</b></td><td>We deliberately do not rebuild text-to-SQL or the semantic layer — both are free platform features now. The moat is the standard of proof, the evidence outside the warehouse, and the memory</td></tr>
+ </tbody></table>
+ <div style="display:flex;gap:16px;margin-top:15px">
+  <div style="flex:1"><div class="lb" style="margin-bottom:6px">Stated openly</div><div class="pr" style="font-size:12.5px">Effect sizes are recovered because they were planted. On real data expect more L1 and L2 and fewer L3s — a counterfactual needs a genuinely untreated cohort, and often none exists.</div></div>
+  <div style="flex:1"><div class="lb" style="margin-bottom:6px">And the honest limit</div><div class="pr" style="font-size:12.5px">Forecasting is trend continuation only. Delivery writes to an outbox and does not send. Confidence is composed, not yet calibrated against realised outcomes.</div></div>
+ </div>
+</div>
+<div class="foot"><span>Accenture Innovation Challenge 2026 · BusinessIntelligence.ai</span><span>10</span></div></div>
