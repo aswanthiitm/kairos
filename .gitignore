@@ -8,3 +8,4 @@ runtime/
 .DS_Store
 data/history/
 data/history.duckdb
+node_modules/
