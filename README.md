@@ -10,6 +10,25 @@ acting on it is where the value sits.
 
 Built for the **Accenture Innovation Challenge 2026 · BusinessIntelligence.ai**.
 
+---
+
+## Demo
+
+<video src="https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4" controls muted playsinline width="900"></video>
+
+[![KAIRÓS demo](docs/media/demo-preview.gif)](https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4)
+
+**▶ [Watch the full 2:52 narrated walkthrough](https://github.com/aswanthiitm/kairos/raw/main/docs/demo.mp4)** — with audio.
+The loop above is silent and shows six moments from it.
+
+The walkthrough covers the live estate, a confirmed finding at the top of the evidence
+ladder, the abstention that prices its own separating test, the data-quality catch, the
+entitlement refusals, and the numeric guard rejecting a figure the model invented.
+
+---
+
+## Run it
+
 ```bash
 git clone https://github.com/aswanthiitm/kairos && cd kairos
 ./run.sh                      # installs, builds the estate, serves on :8000
