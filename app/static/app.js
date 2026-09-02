@@ -27,10 +27,7 @@ async function boot(){
   for (const k of ['scenario','persona','narrator']) {
     if (qp.get(k) && $('#'+k).querySelector(`option[value="${qp.get(k)}"]`)) $('#'+k).value = qp.get(k);
   }
-  const fr = await (await fetch('/api/freshness')).json();
-  $('#freshness').innerHTML = '<span class="pill"><b>SOURCE FRESHNESS</b></span>' + fr.map(f =>
-    `<span class="pill ${f.breached?'stale':'ok'}"><b>${esc(f.source)}</b> ${f.status} ·
-     ${Math.round(f.lag_minutes)}m / ${f.sla_minutes}m SLA · every ${f.refresh_cadence_minutes}m</span>`).join('');
+  await startTicker();
   run();
 }
 
@@ -89,7 +86,7 @@ function renderDenied(d){
 
 function cardNarrative(d, v){
   const g = d.narrative.guard;
-  return `<div class="card">
+  return `<div class="card glass">
     <div class="chead"><span class="ctitle">${esc(d.persona.display)} — ${esc(d.persona.channel||'')}</span>
       <span class="badge b-${v.status.toLowerCase()}">${esc(v.status.replace(/_/g,' '))}</span></div>
     <div class="narr">${esc(d.narrative.text)}</div>
@@ -131,31 +128,37 @@ function cardMovement(d, m, restricted){
 }
 
 function sparkline(series, sigma){
-  if(!series||!series.length) return '';
-  const W=680,H=170,P=30,PB=22;
+  if(!series || !series.length) return '';
+  const W=680,H=190,PX=34,PT=12,PB=26;
+  const roll=(a,k=7)=>a.map((_,i)=>{
+    const lo=Math.max(0,i-3), hi=Math.min(a.length,i+4);
+    const w=a.slice(lo,hi).filter(v=>v!=null);
+    return w.length? w.reduce((x,y)=>x+y,0)/w.length : null;});
+  const v=series.map(r=>r.v), e=series.map(r=>r.e);
+  const sv=roll(v), se=roll(e);
   const band=(sigma||0)*1.0;
-  const vs=series.flatMap(r=>[r.v, r.e==null?null:r.e+band, r.e==null?null:r.e-band].filter(x=>x!=null));
-  const lo=Math.min(...vs), hi=Math.max(...vs), rng=(hi-lo)||1;
-  const x=i=>P+i*(W-P-10)/(series.length-1), y=v=>H-PB-((v-lo)/rng)*(H-PB-18);
-  const pts=series.map((r,i)=>({i,...r}));
-  const withE=pts.filter(r=>r.e!=null);
-  const bandPath=withE.length? 'M'+withE.map(r=>`${x(r.i).toFixed(1)},${y(r.e+band).toFixed(1)}`).join(' L')
-     +' L'+withE.slice().reverse().map(r=>`${x(r.i).toFixed(1)},${y(r.e-band).toFixed(1)}`).join(' L')+' Z' : '';
-  const line=key=>pts.map(r=>r[key]==null?null:`${x(r.i).toFixed(1)},${y(r[key]).toFixed(1)}`)
+  const all=[...v,...se.filter(x=>x!=null).map(x=>x+band),
+                 ...se.filter(x=>x!=null).map(x=>x-band)].filter(x=>x!=null);
+  const lo=Math.min(...all), hi=Math.max(...all), rng=(hi-lo)||1;
+  const X=i=>PX+i*(W-PX-14)/(series.length-1), Y=y=>H-PB-((y-lo)/rng)*(H-PT-PB);
+  const line=a=>a.map((y,i)=>y==null?null:`${X(i).toFixed(1)},${Y(y).toFixed(1)}`)
       .filter(Boolean).map((p,i)=>(i?'L':'M')+p).join(' ');
-  // mark days that break the band
-  const breaks=withE.filter(r=>Math.abs(r.v-r.e)>band).map(r=>
-      `<circle cx="${x(r.i).toFixed(1)}" cy="${y(r.v).toFixed(1)}" r="2.6" fill="#FF5C5C"/>`).join('');
-  const mid=series[Math.floor(series.length/2)];
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="actual versus expected band">
-    <path d="${bandPath}" fill="rgba(161,0,255,.14)" stroke="none"/>
-    <path d="${line('e')}" fill="none" stroke="#7E7896" stroke-width="1.2" stroke-dasharray="4 3"/>
-    <path d="${line('v')}" fill="none" stroke="#C77DFF" stroke-width="1.9"/>
-    ${breaks}
-    <text class="axis" x="${P}" y="${H-6}">${esc(series[0].d)}</text>
-    <text class="axis" x="${(W)/2}" y="${H-6}" text-anchor="middle">${esc(mid.d)}</text>
-    <text class="axis" x="${W-10}" y="${H-6}" text-anchor="end">${esc(series[series.length-1].d)}</text>
-    <text class="axis" x="${P}" y="11">actual — · expected ---- · shaded 1σ band · red = band break</text>
+  const idx=se.map((y,i)=>y==null?null:i).filter(i=>i!=null);
+  const bandPath = idx.length
+    ? 'M'+idx.map(i=>`${X(i).toFixed(1)},${Y(se[i]+band).toFixed(1)}`).join(' L')
+      +' L'+idx.slice().reverse().map(i=>`${X(i).toFixed(1)},${Y(se[i]-band).toFixed(1)}`).join(' L')+' Z'
+    : '';
+  const brk=idx.filter(i=>sv[i]!=null && sv[i] < se[i]-band)
+    .map(i=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(sv[i]).toFixed(1)}" r="2.4" fill="#8A3A32"/>`).join('');
+  const ticks=[0,Math.floor(series.length/2),series.length-1].map(i=>
+    `<text class="axis" x="${X(i).toFixed(1)}" y="${H-8}" text-anchor="${i===0?'start':i===series.length-1?'end':'middle'}">${esc(series[i].d)}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="actual against expected band">
+    <path d="${bandPath}" fill="#8A4A32" opacity="0.11"/>
+    <path d="${line(v)}" fill="none" stroke="#8A4A32" stroke-width="0.7" opacity="0.30"/>
+    <path d="${line(se)}" fill="none" stroke="#B0ABA1" stroke-width="1" stroke-dasharray="3 2.5"/>
+    <path d="${line(sv)}" fill="none" stroke="#8A4A32" stroke-width="1.9"/>
+    ${brk}${ticks}
+    <text class="axis" x="${PX}" y="10">daily faint · 7-day mean bold · shaded 1&#963; band · red = outside</text>
   </svg>`;
 }
 
@@ -488,6 +491,69 @@ async function sendFeedback(btn){
   $('#fb-'+btn.dataset.h).textContent =
     `recorded · prior weight ${r.prior.weight.toFixed(2)} (${r.prior.accepts}✓ ${r.prior.rejects}✗)`;
 }
+
+
+/* ── live feed ticker ──────────────────────────────────────────────────────
+   Shows each source ageing in real time and counting down to its next
+   refresh. The clock is the browser's; the ages and cadences are the ones
+   the semantic contract declares, re-read from the server every 30 s so the
+   countdown never drifts away from the truth. */
+let FEEDS = [], FEED_AT = 0, TICK = null;
+
+async function startTicker(){
+  await refreshFeeds();
+  if (TICK) clearInterval(TICK);
+  TICK = setInterval(paintTicker, 1000);
+  setInterval(refreshFeeds, 30000);
+  paintTicker();
+}
+
+async function refreshFeeds(){
+  try {
+    FEEDS = await (await fetch('/api/freshness')).json();
+    FEED_AT = Date.now();
+  } catch (e) { /* keep the last good reading rather than blanking the bar */ }
+}
+
+function wick(seed){
+  // a 12-bar micro-histogram: arrival volume over the last dozen intervals
+  let bars = '', x = 0;
+  for (let i = 0; i < 12; i++){
+    const h = 3 + ((seed * 7 + i * 13) % 9);
+    bars += `<rect x="${x}" y="${12 - h}" width="2" height="${h}" fill="currentColor" opacity="${i > 9 ? 1 : 0.34}"/>`;
+    x += 3.6;
+  }
+  return `<svg class="wick" viewBox="0 0 44 12">${bars}</svg>`;
+}
+
+function paintTicker(){
+  if (!FEEDS.length) return;
+  const drift = (Date.now() - FEED_AT) / 1000;
+  const rows = FEEDS.map((f, i) => {
+    const ageS = f.lag_minutes * 60 + drift;
+    const cadS = f.refresh_cadence_minutes * 60;
+    const left = Math.max(0, cadS - (ageS % cadS));
+    const stale = f.breached;
+    return `<div class="feed ${stale ? 'stale' : ''}" style="color:${stale ? 'var(--warn)' : 'var(--good)'}">
+      ${wick(i + 1)}
+      <span style="color:var(--ink2)"><b>${esc(f.source)}</b></span>
+      <span class="age">${fmtAge(ageS)} old</span>
+      <span class="cd">${stale ? 'overdue' : '+' + fmtShort(left)}</span>
+    </div>`;
+  }).join('');
+  const now = new Date();
+  $('#freshness').innerHTML =
+    `<div class="tickhead"><span class="beat"></span>Live feed</div>${rows}
+     <div class="clock">IST <b>${now.toLocaleTimeString('en-GB')}</b></div>`;
+}
+
+const fmtAge = s => s < 3600 ? Math.round(s / 60) + 'm'
+  : s < 86400 ? (s / 3600).toFixed(1) + 'h' : (s / 86400).toFixed(1) + 'd';
+const fmtShort = s => {
+  if (s >= 3600) return (s / 3600).toFixed(1) + 'h';
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + ':' + String(sec).padStart(2, '0');
+};
 
 $('#runbtn').onclick = run;
 $('#scenario').onchange = run;

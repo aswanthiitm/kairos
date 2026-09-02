@@ -1,4 +1,4 @@
-"""FastAPI service + static UI for the Why Layer prototype."""
+"""FastAPI service + static UI for the KAIRÓS prototype."""
 import os, sys, json
 from typing import Any, Dict, Optional
 
@@ -9,19 +9,19 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from whylayer.contract import Contract
-from whylayer.sources import Estate
-from whylayer.security import load_personas
-from whylayer.pipeline import run, SCENARIOS
-from whylayer import feedback as FB
-from whylayer.triage import sweep as do_sweep, backtest as do_backtest
-from whylayer.telemetry import Telemetry
-from whylayer.ml import ranker as MLR
-from whylayer.fiscal import FiscalCalendarError
+from kairos.contract import Contract
+from kairos.sources import Estate
+from kairos.security import load_personas
+from kairos.pipeline import run, SCENARIOS
+from kairos import feedback as FB
+from kairos.triage import sweep as do_sweep, backtest as do_backtest
+from kairos.telemetry import Telemetry
+from kairos.ml import ranker as MLR
+from kairos.fiscal import FiscalCalendarError
 from datetime import date
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-app = FastAPI(title="The Why Layer", version="1.0.0")
+app = FastAPI(title="KAIRÓS", version="1.0.0")
 
 CONTRACT = Contract()
 ESTATE = Estate(CONTRACT)
@@ -72,7 +72,7 @@ def meta() -> Dict[str, Any]:
 
 @app.get("/api/freshness")
 def freshness() -> Any:
-    from whylayer.telemetry import Telemetry
+    from kairos.telemetry import Telemetry
     return ESTATE.freshness_report(Telemetry())
 
 
@@ -149,8 +149,8 @@ def semantics() -> Any:
     per-KPI availability, and the reconciliation of every competing KPI definition
     with the rule that selected the winner. Served because a semantic decision that
     cannot be inspected at runtime is not governance, it is a comment."""
-    from whylayer.hierarchy import available_levels
-    from whylayer.kpi_reconciliation import summarise
+    from kairos.hierarchy import available_levels
+    from kairos.kpi_reconciliation import summarise
     f = CONTRACT.fiscal
     probe = date(2026, 8, 30)
     return {

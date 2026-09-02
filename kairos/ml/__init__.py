@@ -2,7 +2,7 @@
 The learned layer.
 
 Everything in this package is a LEARNED PRIOR over candidate drivers. It ranks;
-it never adjudicates. The evidence ladder in ``whylayer.evidence`` remains the
+it never adjudicates. The evidence ladder in ``kairos.evidence`` remains the
 sole arbiter of whether a candidate may be called a cause, and no code path in
 this package can promote a rung, change a verdict status, or add or remove a
 candidate. See ``ranker.DriverRanker.AUTHORITY`` for the enforced contract.

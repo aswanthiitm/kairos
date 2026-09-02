@@ -1,12 +1,12 @@
 # Round 2 Self-Audit — every pointer, graded honestly
 
-**The Why Layer** · Accenture Innovation Challenge 2026 · BusinessIntelligence.ai
+**KAIRÓS** · Accenture Innovation Challenge 2026 · BusinessIntelligence.ai
 
 Audited 2 September 2026 against commit `a36439b`. 125 tests passing.
 
-*Revised the same day, twice. The learned layer (`whylayer/ml/`) landed after the first
-pass, then the semantic layer (`whylayer/fiscal.py`, `whylayer/hierarchy.py`,
-`whylayer/kpi_reconciliation.py`) closed objective 2. Those entries have been rewritten.
+*Revised the same day, twice. The learned layer (`kairos/ml/`) landed after the first
+pass, then the semantic layer (`kairos/fiscal.py`, `kairos/hierarchy.py`,
+`kairos/kpi_reconciliation.py`) closed objective 2. Those entries have been rewritten.
 Nothing else was softened, and the items still absent are still listed as absent.*
 
 ## How to read this
@@ -72,7 +72,7 @@ so `otd_pct × segment` is reported as a grain limit rather than throwing.
 originally listed here have been built. A `semantic` stage now runs *before* FITNESS and
 resolves all three; no downstream stage does any of this reasoning itself.
 
-- **Fiscal calendar** — `whylayer/fiscal.py`. `fiscal_calendar: apr_mar` is read and
+- **Fiscal calendar** — `kairos/fiscal.py`. `fiscal_calendar: apr_mar` is read and
   obeyed: FY2026 resolves to 2025-04-01..2026-03-31, Q1 is Apr–Jun, April is fiscal
   month 1. Analyses can be requested as a period (`--fiscal-period FY2027-Q1`) and the
   boundaries come from the contract. The materiality gate's plan denominator is now the
@@ -85,7 +85,7 @@ resolves all three; no downstream stage does any of this reasoning itself.
   calibrated against that, so `min_pct_of_plan` was restated from 0.015 to 0.08 — see the
   comment in the contract. Backtest precision stays 1.0 with zero false alarms.
 
-- **Region → city hierarchy** — `whylayer/hierarchy.py`. `city` is now generated on every
+- **Region → city hierarchy** — `kairos/hierarchy.py`. `city` is now generated on every
   order line from the contract's own `members` map (16 cities, each in exactly one
   region), roll-up and drill-down are implemented, and a regional movement is attributed
   to its cities with the roll-up checked to close back to the parent. Ratio KPIs are
@@ -93,7 +93,7 @@ resolves all three; no downstream stage does any of this reasoning itself.
   **refused** at city level, because the dispatch feed has no city key and attributing
   one through the ordering account would be inferred rather than measured.
 
-- **Conflicting KPI definitions** — `whylayer/kpi_reconciliation.py`. Two declared
+- **Conflicting KPI definitions** — `kairos/kpi_reconciliation.py`. Two declared
   definitions of net revenue: Finance `gross - discounts - returns`, Operations
   `gross - discounts - returns - shipping`. The engine detects the conflict, separates
   *computational* differences from *contextual* ones, measures the gap on identical rows
@@ -129,7 +129,7 @@ an identity, not an inference) cannot outrank an 80% service failure at L2.
 `propagation.py` adds the mechanism ledger — every hop measured against the same
 untreated cohort in its own lag-aligned window.
 
-**Traditional ML — now present, and deliberately placed.** `whylayer/ml/` adds a
+**Traditional ML — now present, and deliberately placed.** `kairos/ml/` adds a
 histogram gradient-boosted **LambdaRank** driver-ranker trained on 960 resolved historical
 episodes, with isotonic calibration and a time-based holdout. `MethodType.ML` is now emitted
 on every run that has candidates to rank.
@@ -351,7 +351,7 @@ plan), **and** `persistence` (days). The sweep shows 8 slices suppressed on stat
   for.
 
 **To branch from:** log predicted-vs-realised recovery per recommendation and run it through
-the same `whylayer/ml/calibration.py` once enough outcomes exist. The harness is now built;
+the same `kairos/ml/calibration.py` once enough outcomes exist. The harness is now built;
 what is missing is observations.
 
 ## • Role-based personalization of insight depth, recommended actions and delivery channels
@@ -596,7 +596,7 @@ string; lineage per KPI.
 A method registry where every step declares its type and *why that type was chosen*.
 Rendered in the UI and in `telemetry.method_mix`. 100% non-LLM offline, 91% with narration.
 All eight declared categories are now emitted by real code paths; ML was the last empty one
-and `whylayer/ml/ranker.py` fills it.
+and `kairos/ml/ranker.py` fills it.
 
 ## • Runtime telemetry covering latency, model calls, token usage and estimated cost
 **DELIVERED — all four**
@@ -640,7 +640,7 @@ total 453 ms | 1 model call | 1,066 in / 184 out tokens | ₹0.17 | 91% non-LLM
    load test.
 
 **Two former entries are now closed.** *Traditional ML* — an empty category in the method
-ledger — is filled by `whylayer/ml/`. *Confidence calibration* — "scored, never validated" —
+ledger — is filled by `kairos/ml/`. *Confidence calibration* — "scored, never validated" —
 is now measured: isotonic calibration fitted on a held-out later slice, reported as
 Brier 0.1180 / ECE 0.0399 with a reliability table in the model card. That applies to the
 ranker's probability; the ladder-derived recommendation confidence is still uncalibrated.
@@ -650,11 +650,11 @@ ranker's probability; the ladder-derived recommendation confidence is still unca
 These are worse than gaps because they read as features to anyone browsing the repo:
 
 1. ~~`fiscal_calendar: "apr_mar"` — declared, never read by any code.~~ **CLOSED**:
-   `whylayer/fiscal.py` resolves every fiscal boundary the engine uses, and changing the
+   `kairos/fiscal.py` resolves every fiscal boundary the engine uses, and changing the
    key changes them.
 2. ~~`hierarchy: [region, city]` — declared, and `city` does not exist in the data.~~
    **CLOSED**: `city` is generated from the contract's own member map and
-   `whylayer/hierarchy.py` traverses it at runtime.
+   `kairos/hierarchy.py` traverses it at runtime.
 3. `correction` — accepted by the API, stored, never read back. **Still dead.**
 4. `cached: bool` — present in every telemetry record, always False. **Still dead.**
 

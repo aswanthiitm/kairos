@@ -1,7 +1,7 @@
 {
  "model_version": "driver-ranker-v1",
  "feature_contract": "driver-features-v1",
- "trained_at": "2026-09-02T01:56:57.021076",
+ "trained_at": "2026-09-02T14:49:07.611427",
  "objective": "lambdarank",
  "selected_params": {
   "max_depth": 3,

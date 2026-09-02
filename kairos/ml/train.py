@@ -1,9 +1,9 @@
 """
 End-to-end trainer for the driver ranker.
 
-    python -m whylayer.ml.train --build          rebuild the corpus, then train
-    python -m whylayer.ml.train                  train from the existing corpus
-    python -m whylayer.ml.train --include-feedback   fold in analyst-graded runs
+    python -m kairos.ml.train --build          rebuild the corpus, then train
+    python -m kairos.ml.train                  train from the existing corpus
+    python -m kairos.ml.train --include-feedback   fold in analyst-graded runs
 
 The sequence is fixed and the order matters:
 

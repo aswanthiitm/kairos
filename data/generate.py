@@ -1,5 +1,5 @@
 """
-Synthetic estate for the Why Layer prototype.
+Synthetic estate for the KAIRÓS prototype.
 
 Generates four sources with DIFFERENT grains and refresh cadences, then injects
 five scenarios whose ground truth is written to ground_truth.json so the engine
@@ -19,7 +19,7 @@ import pandas as pd
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from whylayer.fiscal import from_contract as fiscal_from_contract
+from kairos.fiscal import from_contract as fiscal_from_contract
 
 SEED = 20260831
 random.seed(SEED); np.random.seed(SEED)

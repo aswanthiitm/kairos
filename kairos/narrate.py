@@ -20,6 +20,7 @@ import yaml
 from .contract import Contract
 from .security import Persona
 from .telemetry import Telemetry, MethodType
+from . import caching
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRICING = yaml.safe_load(open(os.path.join(ROOT, "config", "llm_pricing.yaml")))
@@ -299,9 +300,24 @@ def _simulate(packet: Dict[str, Any], persona: Persona, inject_hallucination: bo
 
 def narrate(packet: Dict[str, Any], persona: Persona, tel: Telemetry,
             purpose: str = "narrative", force_offline: bool = False,
-            mode: str = "auto") -> Dict[str, Any]:
+            mode: str = "auto", use_cache: bool = True) -> Dict[str, Any]:
     """mode: auto | offline | simulate | simulate_bad"""
     model = PRICING["routing"].get(purpose, "claude-haiku-4-5-20251001")
+
+    # Identical evidence, identical persona, identical narrator mode is the same
+    # question - it does not deserve a second model call.
+    ck = caching.packet_key(packet, persona.key, mode)
+    if use_cache:
+        hit = caching.get(ck)
+        if hit is not None:
+            tel.method("narrate", MethodType.DETERMINISTIC, "narrative cache hit",
+                       "the evidence packet is byte-identical to one already narrated, "
+                       "so the answer is served from cache: no model call, no tokens, "
+                       "no cost",
+                       detail="key %s" % ck)
+            out = dict(hit)
+            out["cached"] = True
+            return out
 
     if mode in ("simulate", "simulate_bad"):
         last_bad: List[str] = []
@@ -322,9 +338,13 @@ def narrate(packet: Dict[str, Any], persona: Persona, tel: Telemetry,
                        "the evidence packet; unverifiable figures fail the narrative",
                        detail="passed=%s unverified=%s" % (ok, bad))
             if ok:
-                return {"text": text, "mode": "llm_simulated",
-                        "guard": {"passed": True, "bad": []},
-                        "attempts": attempt, "model": model + " (simulated)"}
+                out = {"text": text, "mode": "llm_simulated",
+                       "guard": {"passed": True, "bad": []},
+                       "attempts": attempt, "model": model + " (simulated)",
+                       "cached": False}
+                if use_cache:
+                    caching.put(ck, out)
+                return out
             last_bad = bad
         text = deterministic_narrative(packet, persona)
         tel.method("narrate", MethodType.DETERMINISTIC, "fallback after guard failure",
@@ -341,8 +361,11 @@ def narrate(packet: Dict[str, Any], persona: Persona, tel: Telemetry,
         tel.method("narrate", MethodType.DETERMINISTIC, "template narrative (no API key)",
                    "the engine degrades to a deterministic narrator rather than to "
                    "silence; every figure is copied from the evidence packet")
-        return {"text": text, "mode": "deterministic", "guard": {"passed": True, "bad": []},
-                "attempts": 0, "model": None}
+        out = {"text": text, "mode": "deterministic", "guard": {"passed": True, "bad": []},
+               "attempts": 0, "model": None, "cached": False}
+        if use_cache:
+            caching.put(ck, out)
+        return out
 
     user = ("PERSONA: %s\nFOCUS: %s\nMAX WORDS: %s\n\nEVIDENCE PACKET:\n%s"
             % (persona.label, ", ".join(persona.narrative.get("focus", [])),
@@ -353,7 +376,8 @@ def narrate(packet: Dict[str, Any], persona: Persona, tel: Telemetry,
     for attempt in (1, 2):
         t0 = time.time()
         msg = client.messages.create(
-            model=model, max_tokens=700, system=SYSTEM,
+            model=model, max_tokens=700,
+            system=caching.cacheable_system_block(SYSTEM),
             messages=[{"role": "user", "content": user if attempt == 1 else
                        user + ("\n\nYour previous draft contained figures that are not in "
                                "the packet: %s. Rewrite using ONLY packet numbers."
@@ -370,8 +394,11 @@ def narrate(packet: Dict[str, Any], persona: Persona, tel: Telemetry,
                    "evidence packet; unverifiable figures fail the narrative",
                    detail="passed=%s unverified=%s" % (ok, bad))
         if ok:
-            return {"text": text, "mode": "llm", "guard": {"passed": True, "bad": []},
-                    "attempts": attempt, "model": model}
+            out = {"text": text, "mode": "llm", "guard": {"passed": True, "bad": []},
+                   "attempts": attempt, "model": model, "cached": False}
+            if use_cache:
+                caching.put(ck, out)
+            return out
         last_bad = bad
 
     text = deterministic_narrative(packet, persona)

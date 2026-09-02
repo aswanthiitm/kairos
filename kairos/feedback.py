@@ -174,4 +174,62 @@ def stats() -> Dict[str, Any]:
             "learned_playbooks": _read_json(PLAYBOOKS, {}),
             "ml_training_labels": ml_rows,
             "feature_snapshots_held": snaps,
-            "ml_retrain_hint": "python -m whylayer.ml.train --include-feedback"}
+            "ml_retrain_hint": "python -m kairos.ml.train --include-feedback"}
+
+
+# ---------------------------------------------------------------- corrections
+# The correction an analyst types was previously stored and never read again.
+# These read it back and let it change what the engine does next.
+
+def corrections(kpi: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Every correction an analyst has written, newest first."""
+    rows: List[Dict[str, Any]] = []
+    if os.path.exists(FEEDBACK):
+        with open(FEEDBACK) as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if not (r.get("correction") or "").strip():
+                    continue
+                if kpi and r.get("kpi") != kpi:
+                    continue
+                rows.append(r)
+    return list(reversed(rows))
+
+
+def correction_notes(kpi: str, hypothesis_ids: List[str]) -> List[Dict[str, Any]]:
+    """Corrections that bear on the hypotheses in front of us right now.
+
+    A correction is a labelled counter-example: an analyst looked at this exact
+    hypothesis on this KPI and said the engine had it wrong, and said why. It is
+    surfaced on every later run of the same shape until someone acts on it —
+    silently down-weighting the prior and hiding the reason would waste the most
+    expensive signal in the system.
+    """
+    out = []
+    for r in corrections(kpi):
+        if r.get("hypothesis_id") in hypothesis_ids:
+            out.append({
+                "hypothesis_id": r["hypothesis_id"],
+                "grade": r.get("grade"),
+                "correction": r["correction"],
+                "analyst": r.get("analyst", "analyst"),
+                "recorded_at": r.get("ts"),
+                "effect": "prior weight %.2f; shown on every run of this shape until "
+                          "the causal graph or a playbook is amended"
+                          % (priors().get(r["hypothesis_id"], {}).get("weight", 1.0)),
+            })
+    return out
+
+
+def correction_stats() -> Dict[str, Any]:
+    rows = corrections()
+    by_hyp: Dict[str, int] = {}
+    for r in rows:
+        by_hyp[r["hypothesis_id"]] = by_hyp.get(r["hypothesis_id"], 0) + 1
+    return {"total": len(rows), "by_hypothesis": by_hyp,
+            "latest": rows[0] if rows else None}

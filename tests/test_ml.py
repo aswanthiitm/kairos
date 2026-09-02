@@ -21,14 +21,14 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from whylayer.contract import Contract
-from whylayer.sources import Estate
-from whylayer import pipeline as PL
-from whylayer import evidence as EV
-from whylayer.ml import features as FT
-from whylayer.ml import ranker as RK
-from whylayer.ml.calibration import Isotonic, brier
-from whylayer.ml.gbdt import HistGBDT, auc, ndcg_at_k, load as gbdt_load, save as gbdt_save
+from kairos.contract import Contract
+from kairos.sources import Estate
+from kairos import pipeline as PL
+from kairos import evidence as EV
+from kairos.ml import features as FT
+from kairos.ml import ranker as RK
+from kairos.ml.calibration import Isotonic, brier
+from kairos.ml.gbdt import HistGBDT, auc, ndcg_at_k, load as gbdt_load, save as gbdt_save
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL = os.path.join(ROOT, "models", "driver-ranker-v1.json")
@@ -195,7 +195,7 @@ def test_graph_rejected_candidates_are_never_scored_by_the_model():
 
 # ================================================================ the model card
 def test_a_trained_model_ships_with_the_repository():
-    assert os.path.exists(MODEL), "run: python -m whylayer.ml.train --build"
+    assert os.path.exists(MODEL), "run: python -m kairos.ml.train --build"
     r = RK.get()
     assert r.available and r.version == "driver-ranker-v1"
 
@@ -226,8 +226,13 @@ def test_the_holdout_is_temporal_and_the_learned_arm_actually_helps():
 def test_telemetry_declares_the_ml_step_and_still_reports_zero_llm_numbers():
     r = go("S1")
     ml = [m for m in r["telemetry"]["methods"] if m["method"] == "ML"]
-    assert len(ml) == 1 and "driver-ranker" in ml[0]["detail"]
-    assert r["telemetry"]["method_mix"]["counts"].get("ML") == 1
+    # two declared ML steps: the ranker itself, and the drift check that decides
+    # whether the ranker was entitled to rank at all
+    assert len(ml) == 2
+    what = " ".join(m["what"] for m in ml)
+    assert "driver-ranker" in what and "input support" in what
+    assert any("driver-ranker" in (m.get("detail") or "") for m in ml)
+    assert r["telemetry"]["method_mix"]["counts"].get("ML") == 2
     assert r["telemetry"]["method_mix"]["pct_non_llm"] == 100.0
 
 
@@ -244,7 +249,7 @@ def test_every_scored_candidate_carries_its_provenance():
 
 
 def test_the_feature_snapshot_is_written_so_feedback_can_become_a_label():
-    from whylayer import feedback as FB
+    from kairos import feedback as FB
     r = go("S1")
     p = os.path.join(FB.SNAPSHOTS, "%s.json" % r["telemetry"]["run_id"])
     assert os.path.exists(p)
@@ -255,7 +260,7 @@ def test_the_feature_snapshot_is_written_so_feedback_can_become_a_label():
 
 
 def test_the_holdout_split_never_puts_one_episode_on_both_sides():
-    from whylayer.ml import dataset as DS
+    from kairos.ml import dataset as DS
     df = DS.load_table()
     tr, ca, te = DS.time_split(df)
     a, b, c = (set(df[m].episode_id) for m in (tr, ca, te))
@@ -264,7 +269,7 @@ def test_the_holdout_split_never_puts_one_episode_on_both_sides():
 
 
 def test_the_training_table_carries_exactly_the_contract_features():
-    from whylayer.ml import dataset as DS
+    from kairos.ml import dataset as DS
     cols = set(DS.load_table().columns)
     assert set(FT.FEATURES) <= cols
     assert not (cols & (FT.FORBIDDEN - {"label", "ladder"})), \

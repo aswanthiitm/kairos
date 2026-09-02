@@ -1,20 +1,23 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>The Why Layer</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>%F0%9F%94%8E</text></svg>">
+<title>KAIRÓS — KPI intelligence to action</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='5' y='5' width='22' height='22' fill='none' stroke='%238A4A32' stroke-width='3'/><rect x='13' y='13' width='6' height='6' fill='%238A4A32'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head><body>
 <header class="top">
   <div class="brand">
     <div class="mark"></div>
-    <div><h1>The Why Layer</h1><p>KPI intelligence-to-action engine &middot; prototype</p></div>
+    <div><h1>KAIRÓS</h1><p>KPI intelligence to action</p></div>
   </div>
   <div class="controls">
-    <label>Scenario<select id="scenario"></select></label>
-    <label>Persona<select id="persona"></select></label>
+    <label>Case<select id="scenario"></select></label>
+    <label>Viewing as<select id="persona"></select></label>
     <label>Narrator<select id="narrator">
-      <option value="auto">auto (API key if present)</option>
+      <option value="auto">auto — API key if present</option>
       <option value="offline">offline — deterministic</option>
       <option value="simulate">simulated LLM — guard passes</option>
       <option value="simulate_bad">simulated LLM — hallucinated figures</option>
@@ -26,11 +29,11 @@
 <div id="freshness" class="freshbar"></div>
 
 <main id="main" class="wrap">
-  <div class="loading">Select a scenario and press Analyse.</div>
+  <div class="loading">Select a case and press Analyse</div>
 </main>
 
 <footer class="foot">
-  <span>Synthetic estate &middot; 4 sources &middot; 3 grains &middot; 4 refresh cadences</span>
+  <span>KAIRÓS · 4 sources · 3 grains · 4 refresh cadences · synthetic estate</span>
   <span id="footmeta"></span>
 </footer>
 <script src="/static/app.js"></script>

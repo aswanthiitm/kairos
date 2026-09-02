@@ -10,7 +10,7 @@ timezone: "Asia/Kolkata"
 
 # ---------------------------------------------------------------------------
 # FISCAL CALENDAR
-# Consumed by whylayer/fiscal.py. Every fiscal boundary the engine resolves -
+# Consumed by kairos/fiscal.py. Every fiscal boundary the engine resolves -
 # the plan period used by the materiality gate, the period label on a movement,
 # and any analysis requested as "FY2027-Q2" - comes from here. Changing the key
 # below changes those boundaries with no code change.
@@ -81,7 +81,7 @@ sources:
 
 # ---------------------------------------------------------------------------
 # DIMENSIONS
-# `hierarchy` is traversed at runtime by whylayer/hierarchy.py: roll-up
+# `hierarchy` is traversed at runtime by kairos/hierarchy.py: roll-up
 # (city -> region), drill-down (region -> city) and level validation all read
 # `members` below. A level a source cannot resolve at its grain is refused, not
 # inferred - see `sliceable_by` on each KPI.
@@ -200,7 +200,7 @@ kpis:
 # COMPETING KPI DEFINITIONS
 # Two systems, two defensible definitions of the same words. This is the normal
 # state of a real estate, and the engine's job is to RECONCILE rather than to
-# pick one quietly. Consumed by whylayer/kpi_reconciliation.py at contract load:
+# pick one quietly. Consumed by kairos/kpi_reconciliation.py at contract load:
 # the winning definition rewrites the KPI's aggregation, the losing one is kept
 # with the reason it lost, and the numeric gap is measured per run.
 #

@@ -10,11 +10,11 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from whylayer.contract import Contract
-from whylayer.sources import Estate
-from whylayer.security import load_personas
-from whylayer.pipeline import run
-from whylayer.narrate import numeric_guard
+from kairos.contract import Contract
+from kairos.sources import Estate
+from kairos.security import load_personas
+from kairos.pipeline import run
+from kairos.narrate import numeric_guard
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GT = json.load(open(os.path.join(ROOT, "data", "generated", "ground_truth.json")))
@@ -172,8 +172,9 @@ def test_telemetry_reports_latency_and_cost():
     r = go("S1")
     t = r["telemetry"]
     assert t["total_ms"] > 0
-    assert [s["stage"] for s in t["stages"]] == ["semantic", "fitness", "sift", "split",
-                                                "source", "propagate", "solve", "narrate"]
+    expected = ["semantic", "fitness", "drift", "sift", "split", "source",
+                "propagate", "forecast", "solve", "narrate"]
+    assert [s["stage"] for s in t["stages"]] == expected
     assert "usd" in t["llm"] and "inr" in t["llm"]
 
 
@@ -248,8 +249,8 @@ def test_clean_evidence_is_marked_corroborated():
 
 # --------------------------------------------------------------- estate operations
 def test_sweep_reports_what_it_suppressed():
-    from whylayer.triage import sweep
-    from whylayer.telemetry import Telemetry
+    from kairos.triage import sweep
+    from kairos.telemetry import Telemetry
     from datetime import date
     s = sweep(C, E, P["data_analyst"], Telemetry(), (date(2026, 8, 17), date(2026, 8, 30)))
     assert s["scanned"] > 40
@@ -258,8 +259,8 @@ def test_sweep_reports_what_it_suppressed():
 
 
 def test_sweep_respects_row_entitlement():
-    from whylayer.triage import sweep
-    from whylayer.telemetry import Telemetry
+    from kairos.triage import sweep
+    from kairos.telemetry import Telemetry
     from datetime import date
     w = (date(2026, 8, 17), date(2026, 8, 30))
     full = sweep(C, E, P["data_analyst"], Telemetry(), w)
@@ -268,8 +269,8 @@ def test_sweep_respects_row_entitlement():
 
 
 def test_backtest_does_not_cry_wolf():
-    from whylayer.triage import backtest
-    from whylayer.telemetry import Telemetry
+    from kairos.triage import backtest
+    from kairos.telemetry import Telemetry
     from datetime import date
     ev = [(date(2026, 8, 3), date(2026, 8, 30), "WH-3 SLA")]
     b = backtest(C, E, P["data_analyst"], Telemetry(), "net_revenue",
@@ -279,7 +280,7 @@ def test_backtest_does_not_cry_wolf():
 
 
 def test_reset_clears_learned_state():
-    from whylayer import feedback as FB
+    from kairos import feedback as FB
     FB.record("t", "cfo", "net_revenue", "H-SLA", "reject")
     assert FB.stats()["total_graded"] > 0
     FB.reset()
@@ -288,15 +289,15 @@ def test_reset_clears_learned_state():
 
 # ---------------------------------------------------------- corrected KPI definition
 def test_reorder_frequency_is_not_saturated():
-    from whylayer.telemetry import Telemetry
+    from kairos.telemetry import Telemetry
     s = E.kpi_series("reorder_rate_28d", P["data_analyst"], None, Telemetry())
     assert s["v"].std() > 0.01, "a metric that never moves cannot be a driver"
     assert s["v"].max() > 1.5, "should be a frequency, not a saturated 0-1 ratio"
 
 
 def test_grain_limits_are_reported_not_thrown():
-    from whylayer.triage import sweep
-    from whylayer.telemetry import Telemetry
+    from kairos.triage import sweep
+    from kairos.telemetry import Telemetry
     from datetime import date
     s = sweep(C, E, P["data_analyst"], Telemetry(), (date(2026, 8, 17), date(2026, 8, 30)))
     assert s["errors"] == 0, "grain mismatches must be handled, not raised"
@@ -351,8 +352,8 @@ def test_fitness_detects_the_class_level_load_failure():
 
 
 def test_fitness_stays_quiet_on_a_clean_window():
-    from whylayer.fitness import assess
-    from whylayer.telemetry import Telemetry
+    from kairos.fitness import assess
+    from kairos.telemetry import Telemetry
     from datetime import date
     f = assess(C, E, Telemetry(), (date(2026, 6, 1), date(2026, 6, 14)))
     assert not [i for i in f["issues"] if i["dimension"] == "completeness"], \
@@ -360,8 +361,8 @@ def test_fitness_stays_quiet_on_a_clean_window():
 
 
 def test_fitness_checks_cross_source_referential_integrity():
-    from whylayer.fitness import assess
-    from whylayer.telemetry import Telemetry
+    from kairos.fitness import assess
+    from kairos.telemetry import Telemetry
     from datetime import date
     tel = Telemetry()
     assess(C, E, tel, (date(2026, 8, 17), date(2026, 8, 30)))

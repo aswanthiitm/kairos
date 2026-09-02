@@ -21,6 +21,9 @@ from .hierarchy import drill_down_kpi, available_levels, HierarchyError
 from . import kpi_reconciliation as KR
 from .ml import ranker as MLR
 from . import feedback as FB
+from . import caching, delivery
+from .drift import data_drift, model_drift
+from .forecast import project as forecast_project, with_intervention
 
 SCENARIOS: Dict[str, Dict[str, Any]] = {
     "S1": {"name": "North revenue drop (multi-factor)", "kpi": "net_revenue",
@@ -279,6 +282,15 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
             "telemetry": tel.summary(),
         }
 
+    with tel.stage("drift"):
+        # Only the DATA half runs here: it asks whether the baseline SIFT is about
+        # to fit still describes the estate. The MODEL half needs the live feature
+        # vectors and runs after the ranker, below.
+        drift = {"data": data_drift(e, tel, (ws, we)),
+                 "model": {"kind": "model", "verdict": "UNKNOWN",
+                           "authority_withdrawn": False,
+                           "reading": "not evaluated - the ranker did not run"}}
+
     with tel.stage("sift"):
         mv = detect(sc["kpi"], p, e, c, tel, ws, we, sc["filters"])
 
@@ -347,6 +359,16 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
             scored = [m for m in ml_scores if m]
             ml_block["candidates"] = {g["hyp"]["id"]: g["grade"]["ml"]
                                       for g in graded if g["grade"].get("ml")}
+            try:
+                drift["model"] = model_drift(tel, ml_block)
+                if drift["model"].get("authority_withdrawn"):
+                    ml_block["authority"] = ("WITHDRAWN this run - live features sit "
+                                             "outside the training support, so the "
+                                             "learned ordering was not applied")
+                    for g in graded:
+                        g["grade"].pop("ml", None)
+            except Exception as ex:
+                drift["model"]["reading"] = "model drift check failed: %s" % type(ex).__name__
             tel.method("source", MethodType.ML, "learned driver-ranker prior",
                        "the hand-designed ranking multiplies by explanatory power, so a "
                        "driver that carries no share of the movement - a competitor "
@@ -417,12 +439,18 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
             }
             break
 
+    with tel.stage("forecast"):
+        fc = forecast_project(mv, tel)
+
     with tel.stage("solve"):
         pbs = FB.apply_learning(c.playbooks["playbooks"])
         recs = recommend(c, tel, sc["kpi"], vd, mv, sp, playbook_store=pbs)
         for r in recs:
             r["delegation"] = route_decision(c, tel, r, vd["status"],
                                              at_risk_inr=abs(mv.delta))
+
+    if fc and recs:
+        fc["with_intervention"] = with_intervention(fc, recs[0])
 
     withheld: List[Dict[str, Any]] = []
     for g in graded:
@@ -472,6 +500,9 @@ def run(scenario: str, persona_key: str, contract: Optional[Contract] = None,
         "ml_ranker": ml_block,
         "separating_test": sep,
         "mechanism_ledger": ledger,
+        "drift": drift,
+        "forecast": fc,
+        "corrections": FB.correction_notes(sc["kpi"], [g["hyp"]["id"] for g in graded]),
         "data_fitness": fit,
         "decision_latency": latency,
         "delegation_policy": delegation_summary(c),

@@ -20,15 +20,15 @@ import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from whylayer.contract import Contract, CFG
-from whylayer.sources import Estate
-from whylayer.security import load_personas
-from whylayer.telemetry import Telemetry
-from whylayer.pipeline import run
-from whylayer.fiscal import FiscalCalendar, FiscalCalendarError, from_contract
-from whylayer.hierarchy import (Hierarchy, HierarchyError, available_levels,
+from kairos.contract import Contract, CFG
+from kairos.sources import Estate
+from kairos.security import load_personas
+from kairos.telemetry import Telemetry
+from kairos.pipeline import run
+from kairos.fiscal import FiscalCalendar, FiscalCalendarError, from_contract
+from kairos.hierarchy import (Hierarchy, HierarchyError, available_levels,
                                 drill_down_kpi, kpi_by_level, roll_up_frame)
-from whylayer import kpi_reconciliation as KR
+from kairos import kpi_reconciliation as KR
 
 C = Contract()
 E = Estate(C)
@@ -178,7 +178,7 @@ def test_materiality_is_measured_against_the_fiscal_period_plan():
 
 
 def test_a_plan_window_spanning_two_fiscal_months_prorates_each():
-    from whylayer.sift import _plan_basis
+    from kairos.sift import _plan_basis
     pct, basis = _plan_basis(C, E, P["data_analyst"], Telemetry(), {"region": "North"},
                              date(2026, 5, 20), date(2026, 6, 10), 1_000_000.0)
     assert basis is not None and len(basis["months"]) == 2
@@ -297,7 +297,7 @@ def test_a_ratio_kpi_is_re_aggregated_not_averaged():
 
 
 def test_a_derived_kpi_refuses_a_sql_roll_up():
-    from whylayer.hierarchy import aggregate_sql
+    from kairos.hierarchy import aggregate_sql
     with pytest.raises(HierarchyError):
         aggregate_sql(C, "reorder_rate_28d", "city", "", *W)
 
@@ -483,8 +483,8 @@ def test_the_method_ledger_declares_the_semantic_step():
 def test_reconciliation_happens_once_and_not_inside_each_stage():
     """Definition logic must live in the semantic layer only. If SIFT, SPLIT or
     evidence.py start reasoning about definitions there will be two answers."""
-    import whylayer.sift, whylayer.split, whylayer.evidence, whylayer.solve
-    for mod in (whylayer.sift, whylayer.split, whylayer.evidence, whylayer.solve):
+    import kairos.sift, kairos.split, kairos.evidence, kairos.solve
+    for mod in (kairos.sift, kairos.split, kairos.evidence, kairos.solve):
         src = open(mod.__file__).read()
         assert "kpi_definitions" not in src and "authority_precedence" not in src, \
             "%s is re-deriving KPI definitions" % mod.__name__
@@ -497,5 +497,5 @@ def test_the_ml_layer_never_mixes_incompatible_definitions():
     assert r["semantics"]["kpi_definitions"]["net_revenue"]["status"] in (
         KR.STATUS_RECONCILED, KR.STATUS_EQUIVALENT, KR.STATUS_SINGLE)
     assert r["ml_ranker"]["status"] == "active"
-    from whylayer.ml import features as FT
+    from kairos.ml import features as FT
     assert not (set(FT.FEATURES) & {"net_revenue_ops", "definition_source"})

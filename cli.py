@@ -2,13 +2,13 @@
 """Headless runner:  python cli.py --scenario S1 --persona cfo [--json]"""
 import argparse, json, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from whylayer.pipeline import run, SCENARIOS
-from whylayer.contract import Contract
-from whylayer.sources import Estate
+from kairos.pipeline import run, SCENARIOS
+from kairos.contract import Contract
+from kairos.sources import Estate
 
 
 def main():
-    ap = argparse.ArgumentParser(description="The Why Layer - KPI intelligence to action")
+    ap = argparse.ArgumentParser(description="KAIRÓS - KPI intelligence to action")
     ap.add_argument("--scenario", default="S1", choices=list(SCENARIOS))
     ap.add_argument("--persona", default="cfo")
     ap.add_argument("--offline", action="store_true", help="force the deterministic narrator")
@@ -36,13 +36,13 @@ def main():
     E = Estate(C)
 
     if a.reset:
-        from whylayer import feedback as FB
+        from kairos import feedback as FB
         print("reset:", FB.reset()); return
 
     if a.semantics:
         from datetime import date as _d
-        from whylayer.hierarchy import available_levels
-        from whylayer.kpi_reconciliation import summarise
+        from kairos.hierarchy import available_levels
+        from kairos.kpi_reconciliation import summarise
         f = C.fiscal
         print("SEMANTIC LAYER")
         print("\n1. FISCAL CALENDAR   %s  (%s)" % (f.key, f.label))
@@ -86,13 +86,13 @@ def main():
         return
 
     if a.train_ranker:
-        from whylayer.ml.train import train
+        from kairos.ml.train import train
         train(build_corpus=a.build_corpus, include_feedback=a.include_feedback)
         return
 
     if a.ml:
-        from whylayer.ml.ranker import get as get_ranker
-        from whylayer.ml.evaluate import render
+        from kairos.ml.ranker import get as get_ranker
+        from kairos.ml.evaluate import render
         r = get_ranker()
         print("ML DRIVER RANKER")
         print("  status    %s" % r.status)
@@ -119,9 +119,9 @@ def main():
 
     if a.sweep or a.backtest:
         from datetime import date
-        from whylayer.security import load_personas
-        from whylayer.telemetry import Telemetry
-        from whylayer.triage import sweep, backtest
+        from kairos.security import load_personas
+        from kairos.telemetry import Telemetry
+        from kairos.triage import sweep, backtest
         P = load_personas(C)[a.persona]; tel = Telemetry()
         if a.sweep:
             r = sweep(C, E, P, tel, (date(2026, 8, 17), date(2026, 8, 30)))

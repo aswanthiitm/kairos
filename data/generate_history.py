@@ -44,7 +44,7 @@ import yaml
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "history")
 sys.path.insert(0, os.path.dirname(HERE))
-from whylayer.fiscal import from_contract as fiscal_from_contract
+from kairos.fiscal import from_contract as fiscal_from_contract
 
 # Same schema as the production estate, read from the same contract. The ML
 # corpus has to carry the columns production carries - city included - or the

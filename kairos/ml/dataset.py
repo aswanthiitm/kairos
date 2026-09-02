@@ -43,7 +43,7 @@ HIST_DB = os.path.join(ROOT, "data", "history.duckdb")
 HIST_GEN = os.path.join(ROOT, "data", "history")
 EPISODES = os.path.join(HIST_GEN, "episodes.json")
 RUNTIME = os.path.join(ROOT, "runtime")
-TABLE = os.path.join(RUNTIME, "driver_episode_features.csv")
+TABLE = os.path.join(ROOT, "models", "driver_episode_features.csv")
 
 # the confidence the shipped heuristic assigns per rung (evidence.verdict)
 LADDER_CONF = {"L3": 0.85, "L2": 0.65, "L1": 0.40, "L0": 0.20, "REJECTED": 0.0}
@@ -174,7 +174,7 @@ def build(limit: Optional[int] = None, persona_key: str = "data_analyst",
 def load_table(path: Optional[str] = None) -> pd.DataFrame:
     path = path or TABLE
     if not os.path.exists(path):
-        raise RuntimeError("no training table - run: python -m whylayer.ml.train --build")
+        raise RuntimeError("no training table - run: python -m kairos.ml.train --build")
     return pd.read_csv(path)
 
 
